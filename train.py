@@ -1,23 +1,32 @@
 import torch
-import os, glob
+import os
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader, random_split
 import torchvision.models as models
 from tqdm import tqdm
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import WeightedRandomSampler
-import torch.nn.functional as F
-from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
 import time
 import argparse
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from collections import Counter
+import random
 
-# ----------------------
-# (1) Model
-# ----------------------
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # 如果使用多張 GPU
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(4)
+
 class TinyTransformer(nn.Module):
     def __init__(self, input_dim, seq_len=110, num_classes=2, d_model=64, nhead=4, num_layers=2):
         super(TinyTransformer, self).__init__()
@@ -127,92 +136,50 @@ class ResNet32(nn.Module):
         return x
 
 
-# ----------------------
-# (2) Custom Dataset
-# ----------------------
-class SkeletonDataset(Dataset):
-    def __init__(self, dataset, GT_class):
-        self.sets = []
-        self.index = []
-        self.features = [] # 全部的資料
-        self.labels = []
-        
-        valid_categories = {'Category_1', 'Category_2', 'Category_3', 'Category_4', 'Category_5'}
-        categories = [path for path in glob.glob(os.path.join(dataset, '*')) if os.path.basename(path) in valid_categories]
-        
-        # 將正確的影片儲存
-        T_recordings = os.listdir(os.path.join(dataset, f'Category_{GT_class}'))
-        
-        for category in categories:
-            recordings = glob.glob(os.path.join(category, '*'))
-            for recording in recordings:
-                # 判斷此影片是否在正確的分類
-                if os.path.basename(category) != f'Category_{GT_class}':
-                    if os.path.basename(recording) in T_recordings:
-                        print(f'{recording} is overlapped with True recording.')
-                        continue
-                        
-                delta_path = os.path.join(recording, 'filtered_delta_norm')
-                delta2_path = os.path.join(recording, 'filtered_delta2_norm')
-                square_path = os.path.join(recording, 'filtered_delta_square_norm')
-                zscore_path = os.path.join(recording, 'filtered_zscore_norm')
-                orin_path = os.path.join(recording, 'filtered_norm')
-                
-                
-                if not all(map(os.path.exists, [delta_path, delta2_path, zscore_path, square_path, orin_path])):
-                    print(f"Missing data in {recording}")
-                    continue
-                
-                deltas = glob.glob(os.path.join(delta_path, '*.txt'))
-                delta2s = glob.glob(os.path.join(delta2_path, '*.txt'))
-                squares = glob.glob(os.path.join(square_path, '*.txt'))
-                zscores = glob.glob(os.path.join(zscore_path, '*.txt'))
-                orins = glob.glob(os.path.join(orin_path, '*.txt'))
-                
-                data_per_ind = list(self.fetch(zip(deltas, delta2s, zscores, squares, orins)))  # 一部影片有幾下資料就有幾筆
-                for i, data in enumerate(data_per_ind):
-                    if not self.index:
-                        self.index.append(0)
-                    else:
-                        self.index.append(self.index[-1] + i)
-                    self.sets.append(os.path.join(recording, str(i)))
-                self.features.extend(data_per_ind)
-                self.labels.extend([1 if f'Category_{GT_class}' in category else 0] * len(data_per_ind))
-    
-    def fetch(self, uds):
-        data_per_ind = []
-        for ud in uds:
-            parsed_data = []
-            for file in ud:
-                with open(file, 'r') as f:
-                    lines = f.read().strip().split('\n')
-                    parsed_data.append([list(map(float, line.split(','))) for line in lines])
-            
-            for num in zip(*parsed_data):
-                data_per_ind.append([item for sublist in num for item in sublist])
-                if len(data_per_ind) == 110:
-                    yield data_per_ind
-                    data_per_ind = []
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        return torch.tensor(self.features[idx], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
-        # if self.loader_name == 'test':
-        #     print(f"Loader: {self.loader_name} | Recording set: {self.sets[idx]}")
-        # return torch.tensor(self.features[self.index[idx]], dtype=torch.float32), torch.tensor(self.labels[idx], dtype=torch.long)
-
-# ----------------------
-# (3) Training Function
-# ----------------------
 # 計算 F1-score 的函數
+def f1_score(y_true, y_pred):
+    # Get unique classes
+    classes = np.unique(np.concatenate((y_true, y_pred)))
+    
+    # Initialize
+    class_f1_scores = {}
+    class_weights = {}
+    
+    # Count instances of each class in true labels
+    total_samples = len(y_true)
+    class_counts = Counter(y_true)
+    
+    # Calculate weights for each class
+    for cls in classes:
+        class_weights[cls] = class_counts.get(cls, 0) / total_samples
+    
+    # For each class, calculate F1 score
+    for cls in classes:
+        # True positives, false positives, false negatives
+        tp = np.sum((y_true == cls) & (y_pred == cls) & ~((y_true == 0) & (y_pred == 0)))
+        fp = np.sum((y_true != cls) & (y_pred == cls))
+        fn = np.sum((y_true == cls) & (y_pred != cls))
+        
+        # Precision and recall
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        
+        # F1 score for this class
+        if precision + recall > 0:
+            class_f1_scores[cls] = 2 * (precision * recall) / (precision + recall)
+        else:
+            class_f1_scores[cls] = 0
+    
+    # Calculate weighted F1 score
+    weighted_f1 = sum(class_weights[cls] * class_f1_scores[cls] for cls in classes)
+    return weighted_f1
+
 def compute_f1_score(model, data_loader):
     model.eval()
     y_true, y_pred = [], []
     
     with torch.no_grad():
-        for inputs, labels in data_loader:
+        for inputs, labels, indices in data_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
@@ -220,7 +187,7 @@ def compute_f1_score(model, data_loader):
             y_true.extend(labels.cpu().numpy())
             y_pred.extend(predicted.cpu().numpy())
 
-    return f1_score(y_true, y_pred, average="macro")  # 使用 Macro F1-score
+    return f1_score(y_true, y_pred)  
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,7 +205,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
         total_loss = 0.0
         y_true, y_pred = [], []
 
-        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
+        for inputs, labels, indices in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -252,7 +219,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
             y_pred.extend(predicted.cpu().numpy())
 
         avg_loss = total_loss / len(train_loader)
-        train_f1 = f1_score(y_true, y_pred, average="macro")
+        train_f1 = f1_score(y_true, y_pred)
         val_f1 = compute_f1_score(model, valid_loader)
 
         scheduler.step()
@@ -291,13 +258,13 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")  # 儲存高解析度圖片
 
 # ----------------------
-# (4) Validation Function
+# Validation Function
 # ----------------------
 def validate_model(model, valid_loader, criterion):
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
-        for inputs, labels in valid_loader:
+        for inputs, labels, indices in valid_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, labels)
@@ -305,52 +272,72 @@ def validate_model(model, valid_loader, criterion):
     return total_loss / len(valid_loader)
 
 # ----------------------
-# (5) Testing Function
+# Testing Function
 # ----------------------
-def test_model(model, test_loader, criterion, save_path):
+def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(save_path))
     model.to(device)
     model.eval()
     
-    total_loss, correct, total = 0.0, 0, 0
-    total_time = 0.0  
+    total_loss, total_time = 0.0, 0.0  
     y_true, y_pred = [], []
 
+    false_positives = []
+    false_negatives = []
+    
     with torch.no_grad():
-        for inputs, labels in test_loader:
+        for inputs, labels, indices in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
             start_time = time.time()
             outputs = model(inputs)
             end_time = time.time()
-
             total_time += (end_time - start_time)
 
             loss = criterion(outputs, labels)
             total_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
-            
-            correct += (predicted == labels).sum().item()
-            total += labels.size(0)
 
+            for i in range(len(inputs)):  # 只迭代當前批次中的實際樣本數量
+                sample_idx = indices[i].item()  # 直接拿到 full_dataset index！
+                detailed_path = full_dataset.get_sample_path(sample_idx)
+                
+                if predicted[i] == 1 and labels[i] == 0:
+                    false_positives.append(f"{str(detailed_path)}")
+                elif predicted[i] == 0 and labels[i] == 1:
+                    false_negatives.append(f"{str(detailed_path)}")
+                    
             y_true.extend(labels.cpu().numpy())
             y_pred.extend(predicted.cpu().numpy())
-            
-    avg_loss = total_loss / len(test_loader)
-    accuracy = correct / total * 100
-    avg_time_per_sample = total_time / total
 
-    # 混淆矩陣
+    avg_loss = total_loss / len(test_loader)
+    avg_time_per_sample = total_time / len(y_true)
+    f1 = f1_score(y_true, y_pred) 
+
+    model_name = os.path.splitext(os.path.basename(save_path))[0]
+    txt_dir = os.path.join(save_dir, f"{model_name}_results")
+    os.makedirs(txt_dir, exist_ok=True)
+
+    with open(f"{txt_dir}/false_positives.txt", "w") as fp_file:
+        fp_file.write("\n".join(false_positives))
+    
+    with open(f"{txt_dir}/false_negatives.txt", "w") as fn_file:
+        fn_file.write("\n".join(false_negatives))
+        
+    print(f"共有 {len(false_positives)} FP，{len(false_negatives)} FN")
+    print(f"已保存到 {txt_dir}/false_positives.txt 和 false_negatives.txt")
+
     cm = confusion_matrix(y_true, y_pred)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     plt.figure(figsize=(6, 6))
     disp.plot(cmap='Blues')
     plt.title('Confusion Matrix')
-    plt.savefig(f"{save_path}_confusion_matrix.png")
+    plt.savefig(f"{txt_dir}/confusion_matrix.png")
     plt.close()
 
-    return avg_loss, accuracy, avg_time_per_sample, y_true, y_pred
+    return avg_loss, f1, avg_time_per_sample, false_positives, false_negatives
+
                                      
 # ----------------------
 # (6) Main Execution
@@ -358,13 +345,23 @@ def test_model(model, test_loader, criterion, save_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--GT_class',type=str)
+    parser.add_argument('--Input_dim',type=int)
     args = parser.parse_args()
     GT_class = args.GT_class
+    input_dim = args.Input_dim
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     datasets_path = os.path.join(os.getcwd(), 'dataset')
-    full_dataset = SkeletonDataset(datasets_path, GT_class)
-    save_dir = f'./models_dd2voz/{GT_class}'
+    
+    if input_dim == 25:
+        from dataset import Dataset_25f
+        full_dataset = Dataset_25f(datasets_path, GT_class)
+        
+    elif input_dim == 19:
+        from dataset import Dataset_19f
+        full_dataset = Dataset_19f(datasets_path, GT_class)
+        
+    save_dir = f'./models_{input_dim}/{GT_class}'
     
     category_ratio = {'1': 0.18, '2': 0.28, '3': 0.19, '4': 0.18, '5': 0.27}
     train_size = int(0.75 * len(full_dataset))
@@ -387,7 +384,6 @@ if __name__ == "__main__":
     Los = []
     Accs = []
     Inf_times = []
-    input_dim = 25
 #     models = {'BiLSTM': BiLSTMModel(input_dim), 'ResNet32': ResNet32(input_dim), 'TinyTransformer': TinyTransformer(input_dim)}
     models = {'ResNet32': ResNet32(input_dim)}
     
@@ -402,12 +398,12 @@ if __name__ == "__main__":
         save_path = os.path.join(save_dir, f"{model_str}_model.pth")
         fig_path = os.path.join(save_dir, f"{model_str}_train_results.png")
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
-        avg_loss, accuracy, avg_time_per_sample, y_true, y_pred = test_model(model, test_loader, criterion, save_path)
+        avg_loss, f1, avg_time_per_sample, false_positives, false_negatives = test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset)
 
         Los.append(avg_loss)
-        Accs.append(accuracy)
+        Accs.append(f1)  # 注意：這裡變成 F1 分數
         Inf_times.append(avg_time_per_sample)
         print(f'{model_str}_model is completely trained.')
     
     for i, (model, f_m) in enumerate(models.items()):
-        print(f"{model} Test Loss: {Los[i]}, Accuracy: {Accs[i]}%, Avg Inference Time per Sample: {Inf_times[i]} sec")
+        print(f"{model} Test Loss: {Los[i]}, F1 Score: {Accs[i]:.4f}, Avg Inference Time per Sample: {Inf_times[i]:.6f} sec")
