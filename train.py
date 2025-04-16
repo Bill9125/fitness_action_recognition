@@ -25,7 +25,6 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-set_seed(4)
 
 class TinyTransformer(nn.Module):
     def __init__(self, input_dim, seq_len=110, num_classes=2, d_model=64, nhead=4, num_layers=2):
@@ -345,65 +344,99 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--GT_class',type=str)
-    parser.add_argument('--Input_dim',type=int)
+    parser.add_argument('--Input_dim',type=int, default=25)
+    parser.add_argument('--SHAP',type=str, default=None)
     args = parser.parse_args()
     GT_class = args.GT_class
     input_dim = args.Input_dim
+    SHAP_mode = args.SHAP
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     datasets_path = os.path.join(os.getcwd(), 'dataset')
     
-    if input_dim == 25:
+    if SHAP_mode is None:
         from dataset import Dataset_25f
         full_dataset = Dataset_25f(datasets_path, GT_class)
+        save_dir = f'./models_dd2voz/{GT_class}'
         
-    elif input_dim == 19:
-        from dataset import Dataset_19f
-        full_dataset = Dataset_19f(datasets_path, GT_class)
-        
-    save_dir = f'./models_{input_dim}/{GT_class}'
+    else:
+        from dataset import Dataset_SHAP
+        full_dataset = Dataset_SHAP(datasets_path, GT_class, SHAP_mode)
+        input_dim = full_dataset.dim
+        save_dir = f'./models_SHAP/{GT_class}/SHAP_{SHAP_mode}'
     
-    category_ratio = {'1': 0.18, '2': 0.28, '3': 0.19, '4': 0.18, '5': 0.27}
+    category_ratio = full_dataset.get_ratio()
+    print(f'Category : {category_ratio}')
     train_size = int(0.75 * len(full_dataset))
     valid_size = int(0.15 * len(full_dataset))
     test_size = len(full_dataset) - train_size - valid_size
     
-    # 計算每個類別的權重 (1 / 類別數量)
-    train_dataset, valid_dataset, test_dataset = random_split(full_dataset, [train_size, valid_size, test_size])
-    train_labels = [full_dataset.labels[i] for i in train_dataset.indices]  # 提取訓練集的標籤
-    batch_size = 8
-    num_samples = [sum(y == i for y in full_dataset.labels) for i in range(2)]
-    class_weights = [1.0 / num for num in num_samples]
-    sample_weights = [class_weights[label] for label in train_labels]
-    sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
-    
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    
-    Los = []
-    Accs = []
-    Inf_times = []
-#     models = {'BiLSTM': BiLSTMModel(input_dim), 'ResNet32': ResNet32(input_dim), 'TinyTransformer': TinyTransformer(input_dim)}
-    models = {'ResNet32': ResNet32(input_dim)}
-    
-    for model_str, model in models.items():
-        # 計算類別權重 (1 / 類別比例)
-        P_ratio = category_ratio[GT_class]
-        class_counts = torch.tensor([P_ratio, 1 - P_ratio])  # [負類, 正類] 的比例
-        weights = 1.0 / class_counts
-        criterion = CrossEntropyLoss(weight=weights.to(device))  # 設定加權損失函數
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
-        save_path = os.path.join(save_dir, f"{model_str}_model.pth")
-        fig_path = os.path.join(save_dir, f"{model_str}_train_results.png")
-        train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
-        avg_loss, f1, avg_time_per_sample, false_positives, false_negatives = test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset)
+    best_f1 = -1
+    best_seed = None
+    best_model_path = ""
 
-        Los.append(avg_loss)
-        Accs.append(f1)  # 注意：這裡變成 F1 分數
-        Inf_times.append(avg_time_per_sample)
-        print(f'{model_str}_model is completely trained.')
-    
-    for i, (model, f_m) in enumerate(models.items()):
-        print(f"{model} Test Loss: {Los[i]}, F1 Score: {Accs[i]:.4f}, Avg Inference Time per Sample: {Inf_times[i]:.6f} sec")
+    all_f1_scores = []
+    seeds = [42, 2023, 7, 88, 100, 999]
+
+    for se in seeds:
+        set_seed(se)
+
+        # 分割資料
+        train_dataset, valid_dataset, test_dataset = random_split(full_dataset, [train_size, valid_size, test_size])
+        train_labels = [full_dataset.labels[i] for i in train_dataset.indices]
+
+        # 建立 Weighted Sampler
+        class_weights = [1.0 / sum(np.array(train_labels) == i) for i in range(2)]
+        sample_weights = [class_weights[label] for label in train_labels]
+        sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+
+        train_loader = DataLoader(train_dataset, batch_size=8, sampler=sampler)
+        valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+
+        # 訓練與測試
+        model = ResNet32(input_dim).to(device)
+        P_ratio = category_ratio[GT_class]
+        class_counts = torch.tensor([P_ratio, 1 - P_ratio])
+        criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
+
+        save_path = os.path.join(save_dir, f"ResNet32_model_seed{se}.pth")
+        fig_path = os.path.join(save_dir, f"ResNet32_train_results_seed{se}.png")
+
+        train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
+
+        avg_loss, f1, avg_time_per_sample, false_positives, false_negatives = test_model_with_path_tracking(
+            model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset
+        )
+
+        print(f"Seed {se} Test F1: {f1:.4f}")
+        all_f1_scores.append(f1)
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_seed = se
+            best_model_path = save_path
+
+    # 🔍 顯示結果 & 建立結果字串
+    summary_lines = []
+    summary_lines.append("\n✅ F1 scores from each seed:")
+    for se, f1 in zip(seeds, all_f1_scores):
+        summary_lines.append(f"Seed {se}: F1 = {f1:.4f}")
+
+    summary_lines.append(f"\n📊 Average F1 Score: {np.mean(all_f1_scores):.4f} ± {np.std(all_f1_scores):.4f}")
+    summary_lines.append(f"🏆 Best F1: {best_f1:.4f} from Seed {best_seed}")
+    summary_lines.append(f"📁 Best model saved at: {best_model_path}")
+
+    # 印出結果到 terminal
+    for line in summary_lines:
+        print(line)
+
+    # 📄 寫入 txt 檔案
+    txt_output_path = os.path.join(save_dir, "results_summary.txt")
+    with open(txt_output_path, "w") as f:
+        for line in summary_lines:
+            f.write(line + "\n")
+
+    print(f"\n✅ 寫入完成：{txt_output_path}")

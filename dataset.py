@@ -6,7 +6,8 @@ class Dataset_25f(Dataset):
     def __init__(self, dataset, GT_class):
         self.sample_paths = []   
         self.features = []       
-        self.labels = []    
+        self.labels = []
+        self.count_info = []    
         counter = 0     
         
         valid_categories = {'Category_1', 'Category_2', 'Category_3', 'Category_4', 'Category_5'}
@@ -46,7 +47,16 @@ class Dataset_25f(Dataset):
                     counter += 1
                 
             print(f'{category} have {counter} samples')
+            self.count_info.append(counter)
             counter = 0
+    
+    def get_ratio(self):
+        category_ratio = {}
+        total = sum(self.count_info)
+        ratios = [x / total for x in self.count_info]
+        for i, ratio in enumerate(ratios):
+            category_ratio[f'{i+1}'] = ratio
+        return category_ratio
     
     def fetch(self, uds):
         """
@@ -86,11 +96,14 @@ class Dataset_25f(Dataset):
     def get_sample_path(self, idx):
         return self.sample_paths[idx]
     
-class Dataset_19f(Dataset):
-    def __init__(self, dataset, GT_class):
+class Dataset_SHAP(Dataset):
+    def __init__(self, dataset, GT_class, mode):
+        self.mode = mode
         self.sample_paths = []   
         self.features = []       
         self.labels = []    
+        self.count_info = []
+        self.dim = int
         counter = 0     
         
         valid_categories = {'Category_1', 'Category_2', 'Category_3', 'Category_4', 'Category_5'}
@@ -130,7 +143,16 @@ class Dataset_19f(Dataset):
                     counter += 1
                 
             print(f'{category} have {counter} samples')
+            self.count_info.append(counter)
             counter = 0
+    
+    def get_ratio(self):
+        category_ratio = {}
+        total = sum(self.count_info)
+        ratios = [x / total for x in self.count_info]
+        for i, ratio in enumerate(ratios):
+            category_ratio[f'{i+1}'] = ratio
+        return category_ratio
     
     def fetch(self, uds):
         """
@@ -142,20 +164,70 @@ class Dataset_19f(Dataset):
         for ud in uds:
             parsed_data = []
             
+            # SHAP_abs
             for file in ud:
+                process_type = os.path.basename(os.path.dirname(file))
+                skip_idx = self.skip_det(process_type)
+                    
                 with open(file, 'r') as f:
                     lines = f.read().strip().split('\n')
-                    parsed_data.append([list(map(float, line.split(','))) for line in lines])
+                    parsed_data.append([
+                        [float(x) for i, x in enumerate(line.split(',')) if i not in skip_idx] # 0:膝角, 1:髖角, 2:身體長度, 3:bar_x, 4:bar_y
+                        for line in lines
+                    ])
             self.sample_paths.append(file)
             
             for num in zip(*parsed_data):
-                # 將 num 裡的數據變成 25*1 
+                # 將 num 裡的數據變成 19*1 
                 frame_data = [item for sublist in num for item in sublist]
+                self.dim = len(frame_data)
                 data_per_ind.append(frame_data)
                 
                 if len(data_per_ind) == 110:  # 达到110帧时返回
                     yield data_per_ind
                     data_per_ind = []
+    
+    def skip_det(self, type):
+        if self.mode == 'abs':
+            if type == 'filtered_delta_square_norm':
+                skip_idx = [2] # delta_square_body_length
+            elif type == 'filtered_norm':
+                skip_idx = [3, 4] # filtered_bar_x, filtered_bar_y
+            elif type == 'filtered_delta2_norm':
+                skip_idx = [0, 2, 4] # delta2_knee_angle, delta2_body_length, delta2_bar_y
+            elif type == 'filtered_delta_norm':
+                skip_idx = [4] # delta_bar_y
+            else:
+                skip_idx = []
+            
+        if self.mode == 'avg_abs_min':
+            if type == 'filtered_delta_square_norm':
+                skip_idx = [0, 1, 2, 4] # delta_square_knee_angle, delta_square_hip_angle, delta_square_body_length, delta_square_bar_y
+            elif type == 'filtered_zscore_norm':
+                skip_idx = [4] # zscore_bar_y
+            elif type == 'filtered_norm':
+                skip_idx = [0] # filtered_knee_angle
+            elif type == 'filtered_delta2_norm':
+                skip_idx = [0, 4] # delta2_knee_angle, delta2_bar_y
+            elif type == 'filtered_delta_norm':
+                skip_idx = [0] # delta_knee_angle
+            else:
+                skip_idx = []
+                
+        if self.mode == 'avg_min':
+            if type == 'filtered_delta_square_norm':
+                skip_idx = [3] # delta_square_bar_x
+            elif type == 'filtered_zscore_norm':
+                skip_idx = [2] # zscore_body_length
+            elif type == 'filtered_norm':
+                skip_idx = [2, 4] # filtered_body_length, filtered_bar_y
+            elif type == 'filtered_delta2_norm':
+                skip_idx = [3] # delta2_bar_x
+            elif type == 'filtered_delta_norm':
+                skip_idx = [3] # delta_bar_x
+            else:
+                skip_idx = []
+        return skip_idx
 
     def __len__(self):
         return len(self.features)
