@@ -190,41 +190,41 @@ class Dataset_SHAP(Dataset):
     def skip_det(self, type):
         if self.mode == 'abs':
             if type == 'filtered_delta_square_norm':
-                skip_idx = [2] # delta_square_body_length
+                skip_idx = [] # delta_square_knee_angle, delta_square_hip_angle, delta_square_body_length
             elif type == 'filtered_norm':
-                skip_idx = [3, 4] # filtered_bar_x, filtered_bar_y
+                skip_idx = [] # filtered_bar_x, filtered_bar_y
             elif type == 'filtered_delta2_norm':
-                skip_idx = [0, 2, 4] # delta2_knee_angle, delta2_body_length, delta2_bar_y
+                skip_idx = [] # delta2_hip_angle
             elif type == 'filtered_delta_norm':
-                skip_idx = [4] # delta_bar_y
+                skip_idx = [2, 4] # delta_body_length, delta_bar_y, delta_hip_angle
             else:
                 skip_idx = []
             
         if self.mode == 'avg_abs_min':
             if type == 'filtered_delta_square_norm':
-                skip_idx = [0, 1, 2, 4] # delta_square_knee_angle, delta_square_hip_angle, delta_square_body_length, delta_square_bar_y
+                skip_idx = [3, 4] # delta_square_bar_x, delta_square_bar_y
             elif type == 'filtered_zscore_norm':
-                skip_idx = [4] # zscore_bar_y
+                skip_idx = [1, 2] # zscore_body_length, zscore_hip_angle
             elif type == 'filtered_norm':
-                skip_idx = [0] # filtered_knee_angle
+                skip_idx = [1] # filtered_hip_angle
             elif type == 'filtered_delta2_norm':
-                skip_idx = [0, 4] # delta2_knee_angle, delta2_bar_y
+                skip_idx = [0, 1] # delta2_knee_angle, delta2_hip_angle
             elif type == 'filtered_delta_norm':
-                skip_idx = [0] # delta_knee_angle
+                skip_idx = [1] # delta_hip_angle
             else:
                 skip_idx = []
                 
         if self.mode == 'avg_min':
             if type == 'filtered_delta_square_norm':
-                skip_idx = [3] # delta_square_bar_x
+                skip_idx = [2] # delta_square_body_length
             elif type == 'filtered_zscore_norm':
-                skip_idx = [2] # zscore_body_length
+                skip_idx = [4] # zscore_bar_y
             elif type == 'filtered_norm':
-                skip_idx = [2, 4] # filtered_body_length, filtered_bar_y
+                skip_idx = [4] # filtered_bar_y
             elif type == 'filtered_delta2_norm':
-                skip_idx = [3] # delta2_bar_x
+                skip_idx = [] 
             elif type == 'filtered_delta_norm':
-                skip_idx = [3] # delta_bar_x
+                skip_idx = [2, 4] # delta_body_length, delta_bar_y
             else:
                 skip_idx = []
         return skip_idx

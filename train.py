@@ -435,7 +435,7 @@ if __name__ == "__main__":
 
     # 📄 寫入 txt 檔案
     txt_output_path = os.path.join(save_dir, "results_summary.txt")
-    with open(txt_output_path, "w") as f:
+    with open(txt_output_path, "w", encoding="utf-8") as f:
         for line in summary_lines:
             f.write(line + "\n")
 
