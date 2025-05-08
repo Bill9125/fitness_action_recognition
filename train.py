@@ -257,6 +257,7 @@ if __name__ == "__main__":
             full_dataset = Dataset_3D(datasets_path, GT_class)
             save_dir = f'./models_3D/{GT_class}'
         input_dim = full_dataset.dim
+        print('input_dim',input_dim)
     
     else:
         from dataset import Dataset_SHAP

@@ -4,6 +4,8 @@
 dataset
 3D_traindata
 models_dd2voz
+models_dd2voz_hand
+model_TST
 models_z
 models_SHAP
 models_3D

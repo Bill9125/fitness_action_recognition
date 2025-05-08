@@ -8,6 +8,7 @@ class Dataset_25f(Dataset):
         self.features = []       
         self.labels = []
         self.count_info = []    
+        self.dim = int
         counter = 0     
         
         valid_categories = {'Category_1', 'Category_2', 'Category_3', 'Category_4', 'Category_5'}
@@ -78,6 +79,7 @@ class Dataset_25f(Dataset):
                 # 將 num 裡的數據變成 25*1 
                 frame_data = [item for sublist in num for item in sublist]
                 data_per_ind.append(frame_data)
+                self.dim = len(frame_data)
                 
                 if len(data_per_ind) == 110:  # 达到110帧时返回
                     yield data_per_ind
