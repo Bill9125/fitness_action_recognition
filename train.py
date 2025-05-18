@@ -247,7 +247,7 @@ if __name__ == "__main__":
     if SHAP_mode is None:
         if F_type == '2D':
             from dataset import Dataset_dd2voz
-            datasets_path = os.path.join(os.getcwd(), '2D_traindata_with_hand')
+            datasets_path = os.path.join(os.getcwd(), '2D_traindata_with_hand_new')
             full_dataset = Dataset_dd2voz(datasets_path, GT_class)
             save_dir = f'./models_dd2voz_hand/{GT_class}'
             
