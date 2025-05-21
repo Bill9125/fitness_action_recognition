@@ -156,7 +156,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     plt.close()
     
     cm = multilabel_confusion_matrix_4x4(y_true, y_pred, n_classes=4)
-    plot_custom_confusion_matrix(cm, classes, f"{txt_dir}/4*4_confusion_matrix.png")
+    plot_custom_confusion_matrix(cm, classes, f"{txt_dir}/confusion_matrix_4_4.png")
     with open(f"{txt_dir}/confusion_matrix_detail_paths.json", "w", encoding="utf-8") as f:
         json.dump(cm_details, f, indent=2, ensure_ascii=False)
 
