@@ -45,8 +45,6 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
             y_pred.extend(preds.tolist())                   # preds shape: (batch, num_classes)
 
         avg_loss = total_loss / len(train_loader)
-        print('y_true', len(y_true), 'EX:', y_true[0])
-        print('y_pred', len(y_pred), 'EX:', y_pred[0])
         train_f1 = f1_score(y_true, y_pred, average='macro')
         val_f1 = compute_f1_score(model, valid_loader)
 
@@ -85,7 +83,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
     plt.grid(True)
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")  # 儲存高解析度圖片
     
-def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset):
+def test_model_with_path_tracking(model, test_loader, criterion, save_dir, save_path, full_dataset, num_classes):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(save_path))
     model.to(device)
@@ -98,7 +96,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     # **存放測試過程的數據**
     total_loss, total_time = 0.0, 0.0  
     y_true, y_pred = [], []
-    cm_details = {str(i): [] for i in range(25)}  # 4 x 4 = 16 格子
+    cm_details = {str(i): [] for i in range(num_classes * num_classes)}
     
     with torch.no_grad():
         for inputs, labels, indices in test_loader:
@@ -117,10 +115,11 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
             for i in range(len(inputs)):
                 sample_idx = indices[i].item()
                 detailed_path = full_dataset.get_sample_path(sample_idx)
-
+                
                 # labels/preds shape: (B, 4)
                 true_vec = labels[i].cpu().numpy()
                 pred_vec = preds[i].cpu().numpy()
+                pred_confidence = probs[i][pred_label].item()
 
                 if true_vec.sum() == 0 and pred_vec.sum() == 0:
                     continue  # 忽略全0樣本（屬於Category_0）
@@ -128,8 +127,8 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
                 # 找出 true_label 和 pred_label
                 true_label = np.argmax(true_vec)
                 pred_label = np.argmax(pred_vec)
-                cm_index = true_label * 5 + pred_label
-                cm_details[str(cm_index)].append(str(detailed_path))  # append 路徑
+                cm_index = true_label * num_classes + pred_label
+                cm_details[str(cm_index)].append([detailed_path, pred_label, pred_confidence])
                     
             y_true.extend(labels.cpu().numpy().tolist())    # labels shape: (batch, num_classes)
             y_pred.extend(preds.tolist())                   # preds shape: (batch, num_classes)
@@ -139,7 +138,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     f1 = f1_score(y_true, y_pred, average='macro')
 
     # 繪製混淆矩陣
-    classes = [str(i) for i in range(1, 6)]
+    classes = [str(i) for i in range(1, num_classes+1)]
     cm = multilabel_confusion_matrix(y_true, y_pred, sample_weight=None, labels=None, samplewise=False)
     n_classes = cm.shape[0]
     fig, axes = plt.subplots(nrows=(n_classes+1)//2, ncols=2, figsize=(12, 10))
@@ -155,7 +154,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     plt.savefig(f"{txt_dir}/confusion_matrix.png")
     plt.close()
     
-    cm = multilabel_confusion_matrix_4x4(y_true, y_pred, n_classes=5)
+    cm = multilabel_confusion_matrix_4x4(y_true, y_pred, num_classes)
     plot_custom_confusion_matrix(cm, classes, f"{txt_dir}/confusion_matrix_mix.png")
     with open(f"{txt_dir}/confusion_matrix_detail_paths.json", "w", encoding="utf-8") as f:
         json.dump(cm_details, f, indent=2, ensure_ascii=False)
@@ -223,7 +222,7 @@ if __name__ == "__main__":
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
 
         avg_loss, f1, avg_time_per_sample = test_model_with_path_tracking(
-            model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset
+            model, test_dataset, criterion, save_dir, save_path, full_dataset, num_classes
         )
         print(f"Seed {se} Test F1: {f1:.4f}, cost {avg_time_per_sample} sec")
         all_f1_scores.append(f1)
