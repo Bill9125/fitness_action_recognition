@@ -119,14 +119,14 @@ def test_model_with_path_tracking(model, test_loader, criterion, save_dir, save_
                 # labels/preds shape: (B, 4)
                 true_vec = labels[i].cpu().numpy()
                 pred_vec = preds[i].cpu().numpy()
-                pred_confidence = probs[i][pred_label].item()
-
+                
                 if true_vec.sum() == 0 and pred_vec.sum() == 0:
                     continue  # 忽略全0樣本（屬於Category_0）
-
+            
                 # 找出 true_label 和 pred_label
                 true_label = np.argmax(true_vec)
                 pred_label = np.argmax(pred_vec)
+                pred_confidence = probs[i][pred_label].item()
                 cm_index = true_label * num_classes + pred_label
                 cm_details[str(cm_index)].append([detailed_path, pred_label, pred_confidence])
                     
