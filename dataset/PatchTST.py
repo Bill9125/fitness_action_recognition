@@ -190,8 +190,8 @@ class Dataset_TST_Benchpress(Dataset):
                 tmp_data = []
                 count = 0
 
-        self.features = np.array(self.features).reshape(-1, 100, 27)  # (N, 100, 27)
-        self.labels = np.array(self.labels)  # (N, 7)
+        self.features = torch.stack(self.features)  # ✅ shape: (N, 100, 27)
+        self.labels = torch.stack(self.labels)      # ✅ shape: (N, 7)
         self.dim = self.features.shape[-1]
 
     def __len__(self):
@@ -237,32 +237,6 @@ class Dataset_TST_Benchpress(Dataset):
             x_stretched = x_stretched[:T]
 
         return x_stretched
-    
-    def fetch(self, uds):
-        """
-        处理数据并返回特征和对应的文件路径
-        """
-        data_per_ind = []
-        
-        # 對每一下做處理
-        for ud in uds:
-            parsed_data = []
-            
-            for file in ud:
-                with open(file, 'r') as f:
-                    lines = f.read().strip().split('\n')
-                    parsed_data.append([list(map(float, line.split(','))) for line in lines])
-            self.sample_paths.append(file)
-            
-            for num in zip(*parsed_data):
-                # 將 num 裡的數據 flatten 
-                frame_data = [item for sublist in num for item in sublist]
-                self.dim = len(frame_data)
-                data_per_ind.append(frame_data)
-                
-                if len(data_per_ind) == 110:  # 达到110帧时返回
-                    yield data_per_ind
-                    data_per_ind = []
                     
     def get_sample_path(self, idx):
         return self.sample_paths[idx]
