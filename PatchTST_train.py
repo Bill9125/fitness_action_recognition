@@ -11,7 +11,8 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from models import PatchTSTClassifier
 from sklearn.metrics import f1_score
 from tools import *
-    
+import argparse
+import json
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -138,8 +139,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     f1 = f1_score(y_true, y_pred, average='macro')
 
     # 繪製混淆矩陣
-    classes = ['The barbell is moving away from the shins', 'Hips rise before the barbell leaves the ground',
-               'The barbell collides with the knees', 'Lower back rounding']
+    classes = [str(i) for i in range(1, 5)]
     cm = multilabel_confusion_matrix(y_true, y_pred, sample_weight=None, labels=None, samplewise=False)
     n_classes = cm.shape[0]
     fig, axes = plt.subplots(nrows=(n_classes+1)//2, ncols=2, figsize=(12, 10))
@@ -156,7 +156,7 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     plt.close()
     
     cm = multilabel_confusion_matrix_4x4(y_true, y_pred, n_classes=4)
-    plot_custom_confusion_matrix(cm, classes, f"{txt_dir}/confusion_matrix_4_4.png")
+    plot_custom_confusion_matrix(cm, classes, f"{txt_dir}/confusion_matrix_mix.png")
     with open(f"{txt_dir}/confusion_matrix_detail_paths.json", "w", encoding="utf-8") as f:
         json.dump(cm_details, f, indent=2, ensure_ascii=False)
 
@@ -164,11 +164,19 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--sport', type=str)
+    args = parser.parse_args()
     
     from dataset.PatchTST import *
-    dataset = os.path.join(os.getcwd(), '3D_traindata')
-    full_dataset = Dataset_TST(dataset)
-    save_dir = f'./model_TST/8'
+    if args.sport == 'deadlift':
+        dataset = os.path.join(os.getcwd(), '3D_traindata')
+        full_dataset = Dataset_TST_Deadlift(dataset)
+        save_dir = f'./model_TST/8'
+    elif args.sport == 'benchpress':
+        dataset = os.path.join(os.getcwd(), 'BPdata', 'bench_press_multilabel_dataset_cut3.csv')
+        full_dataset = Dataset_TST_Benchpress(dataset)
+        save_dir = f'./model_TST_Benchpress/1'
     input_dim = full_dataset.dim
     print('Input dimention',input_dim)
     

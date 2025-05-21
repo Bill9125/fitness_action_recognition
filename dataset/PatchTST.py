@@ -6,8 +6,9 @@ import json
 from collections import defaultdict
 import random
 import torch.nn.functional as Fu
+import pandas as pd
 
-class Dataset_TST(Dataset):
+class Dataset_TST_Deadlift(Dataset):
     def __init__(self, dataset_root, transform = False):
         self.sample_paths = []  
         self.data = {}
@@ -86,6 +87,91 @@ class Dataset_TST(Dataset):
             if target_folder_name in dirnames:
                 return os.path.join(dirpath, target_folder_name)
         return None
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        x = self.features[idx]
+        y = self.labels[idx]
+        
+        if self.transform:
+            stretch_factor = random.uniform(0.8, 1.2)  # 在 0.8 到 1.2 之間隨機拉伸
+            x = self.time_stretch(x, stretch_factor)
+            x = self.add_gaussian_noise(x, std=0.01)
+            
+        return x, y, idx
+    
+    def add_gaussian_noise(self, x, std=0.01):
+        """
+        x: tensor (T, F)
+        std: 標準差，決定噪音強度
+        """
+        noise = torch.randn_like(x) * std
+        return x + noise
+        
+    def time_stretch(self, x, stretch_factor):
+        """
+        x: tensor (T=110, F)
+        stretch_factor: float, >1 表示拉長，<1 表示壓縮
+        """
+        T, F = x.shape
+        new_T = int(T * stretch_factor)
+
+        # 線性插值變更時間長度
+        x_stretched = Fu.interpolate(x.T.unsqueeze(0), size=new_T, mode='linear', align_corners=True)
+        x_stretched = x_stretched.squeeze(0).T
+
+        # 補回或裁切回原始長度 110
+        if new_T < T:
+            pad_len = T - new_T
+            padding = torch.zeros(pad_len, F, device=x.device)
+            x_stretched = torch.cat([x_stretched, padding], dim=0)
+        elif new_T > T:
+            x_stretched = x_stretched[:T]
+
+        return x_stretched
+    
+    def fetch(self, uds):
+        """
+        处理数据并返回特征和对应的文件路径
+        """
+        data_per_ind = []
+        
+        # 對每一下做處理
+        for ud in uds:
+            parsed_data = []
+            
+            for file in ud:
+                with open(file, 'r') as f:
+                    lines = f.read().strip().split('\n')
+                    parsed_data.append([list(map(float, line.split(','))) for line in lines])
+            self.sample_paths.append(file)
+            
+            for num in zip(*parsed_data):
+                # 將 num 裡的數據 flatten 
+                frame_data = [item for sublist in num for item in sublist]
+                self.dim = len(frame_data)
+                data_per_ind.append(frame_data)
+                
+                if len(data_per_ind) == 110:  # 达到110帧时返回
+                    yield data_per_ind
+                    data_per_ind = []
+                    
+    def get_sample_path(self, idx):
+        return self.sample_paths[idx]
+    
+class Dataset_TST_Benchpress(Dataset):
+    def __init__(self, dataset_root, transform = False):
+        self.sample_paths = []  
+        self.data = {}
+        self.features = []
+        self.labels = []
+        self.dim = int
+        self.transform = transform
+        
+        df = pd.read_csv(dataset_root)
+        print(df)
 
     def __len__(self):
         return len(self.features)
