@@ -13,7 +13,6 @@ class Dataset_TST(Dataset):
         self.data = {}
         self.features = []
         self.labels = []
-        self.sample_paths = []
         self.dim = int
         self.transform = transform
         
@@ -157,6 +156,9 @@ class Dataset_TST(Dataset):
                 if len(data_per_ind) == 110:  # 达到110帧时返回
                     yield data_per_ind
                     data_per_ind = []
+                    
+    def get_sample_path(self, idx):
+        return self.sample_paths[idx]
 
 class TransformSubset(torch.utils.data.Dataset):
     def __init__(self, dataset, indices, transform=False):
