@@ -9,13 +9,12 @@ import torch.nn.functional as Fu
 import pandas as pd
 
 class Dataset_TST_Deadlift(Dataset):
-    def __init__(self, dataset_root, transform = False):
+    def __init__(self, dataset_root):
         self.sample_paths = []  
         self.data = {}
         self.features = []
         self.labels = []
         self.dim = int
-        self.transform = transform
         
         # 對應資料夾名稱 → label 數字
         category_map = {
@@ -94,11 +93,6 @@ class Dataset_TST_Deadlift(Dataset):
     def __getitem__(self, idx):
         x = self.features[idx]
         y = self.labels[idx]
-        
-        if self.transform:
-            stretch_factor = random.uniform(0.8, 1.2)  # 在 0.8 到 1.2 之間隨機拉伸
-            x = self.time_stretch(x, stretch_factor)
-            x = self.add_gaussian_noise(x, std=0.01)
             
         return x, y, idx
     
@@ -162,11 +156,10 @@ class Dataset_TST_Deadlift(Dataset):
         return self.sample_paths[idx]
     
 class Dataset_TST_Benchpress(Dataset):
-    def __init__(self, dataset_root, transform=False):
+    def __init__(self, dataset_root):
         self.sample_paths = []  
         self.features = []
         self.labels = []
-        self.transform = transform
         
         df = pd.read_csv(dataset_root, skiprows=1)
         count = 0
@@ -200,43 +193,7 @@ class Dataset_TST_Benchpress(Dataset):
     def __getitem__(self, idx):
         x = self.features[idx]
         y = self.labels[idx]
-        
-        if self.transform:
-            stretch_factor = random.uniform(0.8, 1.2)  # 在 0.8 到 1.2 之間隨機拉伸
-            x = self.time_stretch(x, stretch_factor)
-            x = self.add_gaussian_noise(x, std=0.01)
-            
         return x, y, idx
-    
-    def add_gaussian_noise(self, x, std=0.01):
-        """
-        x: tensor (T, F)
-        std: 標準差，決定噪音強度
-        """
-        noise = torch.randn_like(x) * std
-        return x + noise
-        
-    def time_stretch(self, x, stretch_factor):
-        """
-        x: tensor (T=110, F)
-        stretch_factor: float, >1 表示拉長，<1 表示壓縮
-        """
-        T, F = x.shape
-        new_T = int(T * stretch_factor)
-
-        # 線性插值變更時間長度
-        x_stretched = Fu.interpolate(x.T.unsqueeze(0), size=new_T, mode='linear', align_corners=True)
-        x_stretched = x_stretched.squeeze(0).T
-
-        # 補回或裁切回原始長度 110
-        if new_T < T:
-            pad_len = T - new_T
-            padding = torch.zeros(pad_len, F, device=x.device)
-            x_stretched = torch.cat([x_stretched, padding], dim=0)
-        elif new_T > T:
-            x_stretched = x_stretched[:T]
-
-        return x_stretched
                     
     def get_sample_path(self, idx):
         return self.sample_paths[idx]
@@ -253,7 +210,27 @@ class TransformSubset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         x, y, true_idx = self.dataset[self.indices[idx]]
         if self.transform:
-            stretch_factor = random.uniform(0.8, 1.2)
-            x = self.dataset.time_stretch(x, stretch_factor)
-            x = self.dataset.add_gaussian_noise(x, std=0.01)
+            x = self.time_stretch(x, random.uniform(0.8, 1.2))
+            x = self.add_gaussian_noise(x, std=0.01)
         return x, y, true_idx
+
+    def time_stretch(self, x, stretch_factor):
+        # 假設 x.shape = (T, F)
+        T, F = x.shape
+        new_T = int(T * stretch_factor)
+        x_stretched = torch.nn.functional.interpolate(
+            x.unsqueeze(0).permute(0, 2, 1),  # (1, F, T)
+            size=new_T,
+            mode='linear',
+            align_corners=True
+        ).permute(0, 2, 1).squeeze(0)  # 回到 (T, F)
+        if new_T < T:
+            pad = torch.zeros(T - new_T, F, dtype=x.dtype, device=x.device)
+            x_stretched = torch.cat([x_stretched, pad], dim=0)
+        else:
+            x_stretched = x_stretched[:T]
+        return x_stretched
+
+    def add_gaussian_noise(self, x, std=0.01):
+        noise = torch.randn_like(x) * std
+        return x + noise
