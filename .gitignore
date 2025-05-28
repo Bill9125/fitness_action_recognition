@@ -12,5 +12,6 @@ model_TST_Deadlift
 model_TST_Benchpress
 __pycache__
 2D_traindata_with_hand_new
+2D_traindata_bodylength_vision1
 models_dd2voz_hand
 missing_merge.txt
