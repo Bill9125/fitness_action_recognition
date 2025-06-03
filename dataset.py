@@ -352,3 +352,24 @@ class Dataset_3D(Dataset):
     
     def get_sample_path(self, idx):
         return self.sample_paths[idx]
+    
+    def time_stretch(self, x, stretch_factor):
+        # 假設 x.shape = (T, F)
+        T, F = x.shape
+        new_T = int(T * stretch_factor)
+        x_stretched = torch.nn.functional.interpolate(
+            x.unsqueeze(0).permute(0, 2, 1),  # (1, F, T)
+            size=new_T,
+            mode='linear',
+            align_corners=True
+        ).permute(0, 2, 1).squeeze(0)  # 回到 (T, F)
+        if new_T < T:
+            pad = torch.zeros(T - new_T, F, dtype=x.dtype, device=x.device)
+            x_stretched = torch.cat([x_stretched, pad], dim=0)
+        else:
+            x_stretched = x_stretched[:T]
+        return x_stretched
+
+    def add_gaussian_noise(self, x, std=0.01):
+        noise = torch.randn_like(x) * std
+        return x + noise
