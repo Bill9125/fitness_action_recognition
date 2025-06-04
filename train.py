@@ -11,6 +11,7 @@ import argparse
 from models import ResNet32, BiLSTMModel
 from tools import set_seed, f1_score, compute_f1_score, write_results
 from test import test_model_with_path_tracking
+from dataset import *
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -112,13 +113,11 @@ if __name__ == "__main__":
     
     if SHAP_mode is None:
         if F_type == '2D':
-            from dataset import Dataset_dd2voz
             datasets_path = os.path.join(os.getcwd(), 'data', '2D_traindata_bodylength_vision1')
             full_dataset = Dataset_dd2voz(datasets_path, GT_class)
             save_dir = os.path.join(os.getcwd(), 'models', 'dd2voz_vision1_body', f'{GT_class}')
             
         elif F_type == '3D':
-            from dataset import Dataset_3D
             datasets_path = os.path.join(os.getcwd(), 'data', '3D_traindata')
             full_dataset = Dataset_3D(datasets_path, GT_class)
             save_dir = os.path.join(os.getcwd(), 'models', '3D', f'{GT_class}')
@@ -151,13 +150,23 @@ if __name__ == "__main__":
         set_seed(se)
 
         # 分割資料
-        train_dataset, valid_dataset, test_dataset = random_split(full_dataset, [train_size, valid_size, test_size])
+        gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
+        train_indices, valid_indices, test_indices = random_split(
+            range(len(full_dataset)), [train_size, valid_size, test_size],
+            generator=gen
+        )
+        train_dataset = ResnetSubset(full_dataset, train_indices, transform=True)
+        valid_dataset = ResnetSubset(full_dataset, valid_indices, transform=False)
+        test_dataset  = ResnetSubset(full_dataset, test_indices, transform=False)
+        
         train_labels = [full_dataset.labels[i] for i in train_dataset.indices]
 
         # 建立 Weighted Sampler
         class_weights = [1.0 / sum(np.array(train_labels) == i) for i in range(2)]
         sample_weights = [class_weights[label] for label in train_labels]
-        sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+        sampler = WeightedRandomSampler(weights=sample_weights,
+                                num_samples=len(train_dataset),
+                                replacement=True)
 
         train_loader = DataLoader(train_dataset, batch_size=8, sampler=sampler)
         valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
