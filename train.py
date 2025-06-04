@@ -12,6 +12,7 @@ from models import ResNet32, BiLSTMModel
 from tools import set_seed, f1_score, compute_f1_score, write_results
 from test import test_model_with_path_tracking
 from dataset import *
+from torchsummary import summary
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -199,4 +200,4 @@ if __name__ == "__main__":
             best_seed = se
             best_model_path = save_path
 
-    write_results(seeds, all_f1_scores, best_f1, best_seed, best_model_path, save_dir)
+    write_results(model, input_dim, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)

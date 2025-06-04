@@ -2,7 +2,9 @@ from collections import Counter
 import random
 import numpy as np
 import torch
-import os
+import os, sys
+import io
+from torchsummary import summary
 
 def set_seed(seed):
     random.seed(seed)
@@ -68,12 +70,12 @@ def compute_f1_score(model, data_loader):
 
     return f1_score(y_true, y_pred)  
 
-def write_results(seeds, all_f1_scores, best_f1, best_seed, best_model_path, save_dir):
+def write_results(model, input_dim, seeds, all_f1_scores, all_sample_times, all_acc, best_f1, best_seed, best_model_path, save_dir):
     # 🔍 顯示結果 & 建立結果字串
     summary_lines = []
     summary_lines.append("\n✅ F1 scores from each seed:")
-    for se, f1 in zip(seeds, all_f1_scores):
-        summary_lines.append(f"Seed {se}: F1 = {f1:.4f}")
+    for se, f1, st, ac in zip(seeds, all_f1_scores, all_sample_times, all_acc):
+        summary_lines.append(f"Seed {se}: F1 = {f1:.4f}, Average Time per Sample = {st:.6f} seconds, Accuracy = {ac:.4f}")
 
     summary_lines.append(f"\n📊 Average F1 Score: {np.mean(all_f1_scores):.4f} ± {np.std(all_f1_scores):.4f}")
     summary_lines.append(f"🏆 Best F1: {best_f1:.4f} from Seed {best_seed}")
@@ -86,6 +88,11 @@ def write_results(seeds, all_f1_scores, best_f1, best_seed, best_model_path, sav
     # 📄 寫入 txt 檔案
     txt_output_path = os.path.join(save_dir, "results_summary.txt")
     with open(txt_output_path, "w", encoding="utf-8") as f:
+        buffer = io.StringIO()
+        sys.stdout = buffer
+        summary(model, input_size=(110, input_dim))
+        sys.stdout = sys.__stdout__
+        f.write(buffer.getvalue())
         for line in summary_lines:
             f.write(line + "\n")
 

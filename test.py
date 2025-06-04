@@ -11,6 +11,7 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import WeightedRandomSampler
 import numpy as np
 from sklearn.metrics import accuracy_score
+from torchsummary import summary
 
 def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -122,6 +123,9 @@ if __name__ == "__main__":
     best_model_path = ""
 
     all_f1_scores = []
+    all_avg_times = []
+    all_acc = []
+    
     seeds = [42, 2023, 7, 88, 100, 999]
 
     for se in seeds:
@@ -147,10 +151,12 @@ if __name__ == "__main__":
 
         print(f"Seed {se} Test F1: {f1:.4f}")
         all_f1_scores.append(f1)
+        all_avg_times.append(avg_time_per_sample)
+        all_acc.append(acc)
 
         if f1 > best_f1:
             best_f1 = f1
             best_seed = se
             best_model_path = save_path
     
-    write_results(seeds, all_f1_scores, best_f1, best_seed, best_model_path, save_dir)
+    write_results(model, input_dim, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
