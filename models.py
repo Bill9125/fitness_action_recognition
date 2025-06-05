@@ -2,17 +2,6 @@ import torchvision.models as models
 import torch.nn as nn
 import torch
     
-class LSTMModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim=128, num_layers=2, num_classes=2):
-        super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, num_classes)  # 單向 LSTM 輸出 hidden_dim
-        
-    def forward(self, x):
-        _, (hn, _) = self.lstm(x)  # 只取最後一層的 hidden state
-        out = self.fc(hn[-1])  # 使用最後一層的 hidden state 作為輸入
-        return out
-    
 class BiLSTMModel(nn.Module):
     def __init__(self, input_dim, hidden_dim=128, num_layers=2, num_classes=2):
         super(BiLSTMModel, self).__init__()

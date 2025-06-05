@@ -114,9 +114,9 @@ if __name__ == "__main__":
     
     if SHAP_mode is None:
         if F_type == '2D':
-            datasets_path = os.path.join(os.getcwd(), 'data', '2D_traindata_bodylength_vision1')
+            datasets_path = os.path.join(os.getcwd(), 'data', '2D_traindata_Final')
             full_dataset = Dataset_dd2voz(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', 'dd2voz_vision1_body', f'{GT_class}')
+            save_dir = os.path.join(os.getcwd(), 'models', 'dd2voz_Final_BiLSTM', f'{GT_class}')
             
         elif F_type == '3D':
             datasets_path = os.path.join(os.getcwd(), 'data', '3D_traindata')
@@ -174,15 +174,15 @@ if __name__ == "__main__":
         test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
         # 訓練與測試
-        model = ResNet32(input_dim).to(device)
+        model = BiLSTMModel(input_dim).to(device)
         P_ratio = category_ratio[GT_class]
         class_counts = torch.tensor([P_ratio, 1 - P_ratio])
         criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
-        save_path = os.path.join(save_dir, f"ResNet32_model_seed{se}.pth")
-        fig_path = os.path.join(save_dir, f"ResNet32_train_results_seed{se}.png")
+        save_path = os.path.join(save_dir, f"BiLSTM_model_seed{se}.pth")
+        fig_path = os.path.join(save_dir, f"BiLSTM_train_results_seed{se}.png")
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
 
