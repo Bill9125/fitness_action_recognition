@@ -3,9 +3,6 @@ import numpy as np
 import torch, os
 from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
-import io
-import sys
-from torchsummary import summary
 
 def set_seed(seed):
     random.seed(seed)
@@ -93,7 +90,7 @@ def plot_custom_confusion_matrix(cm, class_names, save_path):
     plt.savefig(save_path)
     plt.close()
     
-def write_result(model, input_dim, seeds, all_f1_scores, accuracies, cost_times, save_dir, best_f1, best_seed, best_model_path):
+def write_result(model, seeds, all_f1_scores, accuracies, cost_times, save_dir, best_f1, best_seed, best_model_path):
     # 🔍 顯示結果 & 建立結果字串
     summary_lines = []
     summary_lines.append("\n✅ F1 scores from each seed:")
