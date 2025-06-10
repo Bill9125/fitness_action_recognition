@@ -119,9 +119,9 @@ if __name__ == "__main__":
             save_dir = os.path.join(os.getcwd(), 'models', 'dd2voz_Final_BiLSTM', f'{GT_class}')
             
         elif F_type == '3D':
-            datasets_path = os.path.join(os.getcwd(), 'data', '3D_traindata')
+            datasets_path = os.path.join(os.getcwd(), 'data', '3D_Final')
             full_dataset = Dataset_3D(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', '3D', f'{GT_class}')
+            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', f'{GT_class}')
         input_dim = full_dataset.dim
         print('input_dim',input_dim)
     
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
         # 訓練與測試
-        model = BiLSTMModel(input_dim).to(device)
+        model = ResNet32(input_dim).to(device)
         P_ratio = category_ratio[GT_class]
         class_counts = torch.tensor([P_ratio, 1 - P_ratio])
         criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
