@@ -96,10 +96,10 @@ if __name__ == "__main__":
         num_classes = 4
         input_len = 110
     elif args.sport == 'benchpress':
-        dataset = os.path.join(os.getcwd(), 'data', 'BPdata', 'bench_press_multilabel_dataset_cut3.csv')
+        dataset = os.path.join(os.getcwd(), 'data', 'BPdata_Final', 'bench_press_multilabel_cut4.csv')
         full_dataset = Dataset_TST_Benchpress(dataset)
-        save_dir = './models/TST_Benchpress/2'
-        num_classes = 4
+        save_dir = './models/benchpress/TST_Benchpress'
+        num_classes = 5
         input_len = 100
     input_dim = full_dataset.dim
     print('Input dimention',input_dim)

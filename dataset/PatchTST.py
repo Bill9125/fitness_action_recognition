@@ -167,10 +167,11 @@ class Dataset_TST_Benchpress(Dataset):
         tmp_data = []
 
         for _, row in df.iterrows():
-            if row.iloc[28] == 1:
-                continue
-            data = row.iloc[0:27].values.astype(float)
-            label = row.iloc[29:33].values.astype(int)
+            data_1 = row.iloc[0:28].values.astype(float)
+            data_2 = row.iloc[32:50].values.astype(float)
+            data_3 = row.iloc[56:60].values.astype(float)
+            data = data_1.tolist() + data_2.tolist() + data_3.tolist()
+            label = row.iloc[61:66].values.astype(int)
             path = row.iloc[-1]
 
             tmp_data.append(data)
