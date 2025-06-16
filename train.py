@@ -12,7 +12,6 @@ from models import ResNet32, BiLSTMModel
 from tools import set_seed, f1_score, compute_f1_score, write_results
 from test import test_model_with_path_tracking
 from dataset import *
-from torchsummary import summary
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,23 +103,25 @@ if __name__ == "__main__":
     parser.add_argument('--GT_class',type=str)
     parser.add_argument('--SHAP',type=str, default=None)
     parser.add_argument('--F_type',type=str)
+    parser.add_argument('--model', type=str, default='ResNet32', choices=['ResNet32', 'BiLSTM'], help='Model type to use for training')
     args = parser.parse_args()
     GT_class = args.GT_class
     SHAP_mode = args.SHAP
     F_type = args.F_type
-    
+    model_type = args.model
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     if SHAP_mode is None:
         if F_type == '2D':
-            datasets_path = os.path.join(os.getcwd(), 'data', '2D_traindata_Final')
+            datasets_path = os.path.join(os.getcwd(), 'data', 'BPdata_Final', 'bench_press_multilabel_cut4.csv')
             full_dataset = Dataset_dd2voz(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', 'dd2voz_Final_BiLSTM', f'{GT_class}')
-            
+            save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, GT_class)
+
         elif F_type == '3D':
             datasets_path = os.path.join(os.getcwd(), 'data', '3D_Final')
             full_dataset = Dataset_3D(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', f'{GT_class}')
+            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', GT_class)
         input_dim = full_dataset.dim
         print('input_dim',input_dim)
     
@@ -173,15 +174,18 @@ if __name__ == "__main__":
         test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
         # 訓練與測試
-        model = ResNet32(input_dim).to(device)
+        if model_type == 'BiLSTM':
+            model = BiLSTMModel(input_dim).to(device)
+        elif model_type == 'ResNet32':
+            model = ResNet32(input_dim).to(device)
         P_ratio = category_ratio[GT_class]
         class_counts = torch.tensor([P_ratio, 1 - P_ratio])
         criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
         optimizer = optim.Adam(model.parameters(), lr=0.0001)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
-        save_path = os.path.join(save_dir, f"ResNet32_model_seed{se}.pth")
-        fig_path = os.path.join(save_dir, f"ResNet32_train_results_seed{se}.png")
+        save_path = os.path.join(save_dir, f"{model_type}_model_seed{se}.pth")
+        fig_path = os.path.join(save_dir, f"{model_type}_train_results_seed{se}.png")
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
 
