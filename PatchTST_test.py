@@ -14,15 +14,11 @@ from models import PatchTSTClassifier
 from sklearn.metrics import accuracy_score
 
 
-def test_model_with_path_tracking(model, test_loader, criterion, save_dir, save_path, full_dataset, num_classes):
+def test_model_with_path_tracking(model, test_loader, criterion, txt_dir, save_path, full_dataset, num_classes):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(save_path))
     model.to(device)
     model.eval()
-    
-    model_name = os.path.splitext(os.path.basename(save_path))[0]
-    txt_dir = os.path.join(save_dir, f"{model_name}_results")
-    os.makedirs(txt_dir, exist_ok=True)
     
     # **存放測試過程的數據**
     total_loss, total_time = 0.0, 0.0  
@@ -74,10 +70,10 @@ def test_model_with_path_tracking(model, test_loader, criterion, save_dir, save_
     f1 = f1_score(y_true, y_pred, average='macro')
 
     # 繪製混淆矩陣
-    # binary_classes = ['left-side low', 'right-side low', 'shoulder press', 'shoulder up']
-    # classes = ['Correct', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
-    binary_classes = ['wrist press', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
-    classes = ['Correct', 'wrist press', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
+    binary_classes = ['left-side low', 'right-side low', 'shoulder press', 'shoulder up']
+    classes = ['Correct', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
+    # binary_classes = ['wrist press', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
+    # classes = ['Correct', 'wrist press', 'left-side low', 'right-side low', 'shoulder press', 'shoulder up']
     # binary_classes = ['The barbell is moving away from the shins.', 'Hips rise before the barbell leaves the ground.', 'The barbell collides with the knees.', 'Lower back rounding']
     # classes = ['Correct', 'Far from the shins', 'Hips rise first', 'Collide with the knees', 'Lower back rounding']
     
@@ -119,7 +115,7 @@ if __name__ == "__main__":
         input_len = 110
         
     elif args.sport == 'benchpress':
-        dataset = os.path.join(os.getcwd(), 'data', 'BPdata', 'bench_press_multilabel_dataset_cut3.csv')
+        dataset = os.path.join(os.getcwd(), 'data', 'BPdata', 'bench_press_multilabel_cut4.csv')
         full_dataset = Dataset_TST_Benchpress(dataset)
         save_dir = f'./models/TST_Benchpress/2'
         num_classes = 4

@@ -96,10 +96,10 @@ if __name__ == "__main__":
         num_classes = 4
         input_len = 110
     elif args.sport == 'benchpress':
-        dataset = os.path.join(os.getcwd(), 'data', 'BPdata_Final', 'bench_press_multilabel_cut4.csv')
+        dataset = os.path.join(os.getcwd(), 'data', 'BP_data_oringinal', 'bench_press_multilabel_cut4.csv')
         full_dataset = Dataset_TST_Benchpress(dataset)
-        save_dir = './models/benchpress/TST_Benchpress'
-        num_classes = 5
+        save_dir = './models/benchpress/TST_Benchpress/6'
+        num_classes = 4
         input_len = 100
     input_dim = full_dataset.dim
     print('Input dimention',input_dim)
@@ -142,12 +142,14 @@ if __name__ == "__main__":
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
         save_path = os.path.join(save_dir, f"PatchTST_model_seed{se}.pth")
-        fig_path = os.path.join(save_dir, f"PatchTST_train_results_seed{se}.png")
+        txt_dir = os.path.join(save_dir, f"PatchTST_model_seed{se}_results")
+        fig_path = os.path.join(txt_dir, f"train_results_seed{se}.png")
+        os.makedirs(txt_dir, exist_ok=True)
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
 
         avg_loss, f1, avg_time_per_sample, accuracy = test_model_with_path_tracking(
-            model, test_loader, criterion, save_dir, save_path, full_dataset, num_classes
+            model, test_loader, criterion, txt_dir, save_path, full_dataset, num_classes
         )
         print(f"Seed {se} Test F1: {f1:.4f}, Accuracy: {accuracy:.4f}, cost {avg_time_per_sample} sec")
         all_f1_scores.append(f1)
