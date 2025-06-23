@@ -1,10 +1,7 @@
-from collections import Counter
 import random
 import numpy as np
 import torch
 import os, sys
-import io
-from torchsummary import summary
 
 def set_seed(seed):
     random.seed(seed)
@@ -18,41 +15,18 @@ def set_seed(seed):
 
 # 計算 F1-score 的函數
 def f1_score(y_true, y_pred):
-    # Get unique classes
-    classes = np.unique(np.concatenate((y_true, y_pred)))
-    
-    # Initialize
-    class_f1_scores = {}
-    class_weights = {}
-    
-    # Count instances of each class in true labels
-    total_samples = len(y_true)
-    class_counts = Counter(y_true)
-    
-    # Calculate weights for each class
-    for cls in classes:
-        class_weights[cls] = class_counts.get(cls, 0) / total_samples
-    
-    # For each class, calculate F1 score
-    for cls in classes:
-        # True positives, false positives, false negatives
-        tp = np.sum((y_true == cls) & (y_pred == cls) & ~((y_true == 0) & (y_pred == 0)))
-        fp = np.sum((y_true != cls) & (y_pred == cls))
-        fn = np.sum((y_true == cls) & (y_pred != cls))
-        
-        # Precision and recall
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        
-        # F1 score for this class
-        if precision + recall > 0:
-            class_f1_scores[cls] = 2 * (precision * recall) / (precision + recall)
-        else:
-            class_f1_scores[cls] = 0
-    
-    # Calculate weighted F1 score
-    weighted_f1 = sum(class_weights[cls] * class_f1_scores[cls] for cls in classes)
-    return weighted_f1
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+
+    tp = np.sum((y_true == 1) & (y_pred == 1))
+    fp = np.sum((y_true == 0) & (y_pred == 1))
+    fn = np.sum((y_true == 1) & (y_pred == 0))
+
+    denominator = 2 * tp + fp + fn
+    if denominator == 0:
+        return 0.0  # 或 return np.nan 若你想保留 NaN 以作為後續辨識
+    f1 = 2 * tp / denominator
+    return f1
 
 def compute_f1_score(model, data_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -70,7 +44,7 @@ def compute_f1_score(model, data_loader):
 
     return f1_score(y_true, y_pred)  
 
-def write_results(model, input_dim, seeds, all_f1_scores, all_sample_times, all_acc, best_f1, best_seed, best_model_path, save_dir):
+def write_results(model, input_dim, category_ratio, seeds, all_f1_scores, all_sample_times, all_acc, best_f1, best_seed, best_model_path, save_dir):
     # 🔍 顯示結果 & 建立結果字串
     summary_lines = []
     summary_lines.append("\n✅ F1 scores from each seed:")
@@ -92,6 +66,8 @@ def write_results(model, input_dim, seeds, all_f1_scores, all_sample_times, all_
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         f.write(f"Total parameters: {total}\n")
         f.write(f"Trainable parameters: {trainable}\n")
+        f.write(f"Input dimension: {input_dim}\n")
+        f.write(f"Category ratio: {category_ratio}\n")
         for line in summary_lines:
             f.write(line + "\n")
 

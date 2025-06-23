@@ -8,12 +8,9 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import argparse
 from models import ResNet32, BiLSTMModel
 from torch.nn import CrossEntropyLoss
-from torch.utils.data import WeightedRandomSampler
-import numpy as np
 from sklearn.metrics import accuracy_score
-from torchsummary import summary
 
-def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset):
+def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, txt_dir, save_path, full_dataset):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(save_path))
     model.to(device)
@@ -55,9 +52,6 @@ def test_model_with_path_tracking(model, test_loader, test_dataset, criterion, s
     f1 = f1_score(y_true, y_pred)
     acc = accuracy_score(y_true, y_pred) 
 
-    model_name = os.path.splitext(os.path.basename(save_path))[0]
-    txt_dir = os.path.join(save_dir, f"{model_name}_results")
-    os.makedirs(txt_dir, exist_ok=True)
 
     with open(f"{txt_dir}/false_positives.txt", "w") as fp_file:
         fp_file.write("\n".join(false_positives))

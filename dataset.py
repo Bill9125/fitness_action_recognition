@@ -1,6 +1,8 @@
 from torch.utils.data import Dataset
 import os, glob
 import torch
+import pandas as pd
+import numpy as np
 import random
 
 class Dataset_dd2voz(Dataset):
@@ -375,6 +377,67 @@ class Dataset_3D(Dataset):
         noise = torch.randn_like(x) * std
         return x + noise
     
+class Dataset_Benchpress(Dataset):
+    def __init__(self, dataset_root, GT_class):
+        self.sample_paths = []  
+        self.features = []
+        self.labels = []
+        self.count_info = []  # [negative_count, positive_count]
+        
+        df = pd.read_csv(dataset_root, skiprows=1)
+        counter = 0
+        tmp_data = []
+        label_counter = {0: 0, 1: 0}
+
+        for _, row in df.iterrows():
+            data_1 = row.iloc[0:28].values.astype(float)
+            data_2 = row.iloc[32:50].values.astype(float)
+            data_3 = row.iloc[56:60].values.astype(float)
+            data = data_1.tolist() + data_2.tolist() + data_3.tolist()
+            ground_true = row.iloc[61:66].values.astype(int)
+            label = ground_true[GT_class]
+            tmp_data.append(data)
+            label_counter[label] += 1
+
+            counter += 1
+            if counter == 100:
+                block = np.array(tmp_data)
+                path = row.iloc[-1]
+                if path in self.sample_paths:
+                    print(f"Skipping duplicate path: {path}")
+                    continue
+                self.sample_paths.append(path)
+                self.features.append(torch.tensor(block).float())
+                self.labels.append(torch.tensor(label).long())
+
+                tmp_data = []
+                counter = 0
+
+        self.features = torch.stack(self.features)
+        self.labels = torch.stack(self.labels)
+        self.dim = self.features.shape[-1]
+
+        self.count_info = [label_counter[0], label_counter[1]]
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        x = self.features[idx]
+        y = self.labels[idx]
+        return x, y, idx
+                    
+    def get_sample_path(self, idx):
+        return self.sample_paths[idx]
+    
+    def get_ratio(self):
+        category_ratio = {}
+        total = sum(self.count_info)
+        if total > 0:
+            category_ratio['0'] = self.count_info[0] / total
+            category_ratio['1'] = self.count_info[1] / total
+        return category_ratio
+
 class ResnetSubset(torch.utils.data.Dataset):
     def __init__(self, dataset, indices, transform=False):
         self.dataset = dataset

@@ -46,9 +46,9 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
         train_f1 = f1_score(y_true, y_pred)
         val_f1 = compute_f1_score(model, valid_loader)
 
-        scheduler.step()
         print(f"Epoch {epoch+1}, Train Loss: {avg_loss:.4f}, Train F1: {train_f1:.4f}, Val F1: {val_f1:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
 
+        scheduler.step()
         # **紀錄數據**
         train_losses.append(avg_loss)
         train_f1_scores.append(train_f1)
@@ -100,28 +100,42 @@ def validate_model(model, valid_loader, criterion):
 # ----------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--GT_class',type=str)
+    parser.add_argument('--GT_class',type=int)
     parser.add_argument('--SHAP',type=str, default=None)
     parser.add_argument('--F_type',type=str)
-    parser.add_argument('--model', type=str, default='ResNet32', choices=['ResNet32', 'BiLSTM'], help='Model type to use for training')
+    parser.add_argument('--model', type=str, default='Resnet32', choices=['ResNet32', 'BiLSTM'], help='Model type to use for training')
+    parser.add_argument('--data',type=str)
+    parser.add_argument('--sport', type=str, default='benchpress', choices=['benchpress', 'deadlift'], help='Sport type for the dataset')
     args = parser.parse_args()
     GT_class = args.GT_class
     SHAP_mode = args.SHAP
     F_type = args.F_type
     model_type = args.model
+    data = args.data
+    sport = args.sport
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if SHAP_mode is None:
         if F_type == '2D':
-            datasets_path = os.path.join(os.getcwd(), 'data', 'BPdata_Final', 'bench_press_multilabel_cut4.csv')
-            full_dataset = Dataset_dd2voz(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, GT_class)
+            if sport == 'deadlift':
+                data_path = os.path.join(os.getcwd(), 'data', data)
+                full_dataset = Dataset_dd2voz(data_path, GT_class)
+                save_dir = os.path.join(os.getcwd(), 'models', 'deadlift', model_type, str(GT_class))
+                category_ratio = full_dataset.get_ratio()
+                P_ratio = category_ratio[str(GT_class)]
+                
+            if sport == 'benchpress':
+                data_path = os.path.join(os.getcwd(), 'data', data, 'bench_press_multilabel_cut4.csv')
+                full_dataset = Dataset_Benchpress(data_path, GT_class)
+                save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data, str(GT_class))
+                category_ratio = full_dataset.get_ratio()
+                P_ratio = category_ratio['1']
 
         elif F_type == '3D':
-            datasets_path = os.path.join(os.getcwd(), 'data', '3D_Final')
-            full_dataset = Dataset_3D(datasets_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', GT_class)
+            data_path = os.path.join(os.getcwd(), 'data', '3D_Final')
+            full_dataset = Dataset_3D(data_path, GT_class)
+            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', str(GT_class))
         input_dim = full_dataset.dim
         print('input_dim',input_dim)
     
@@ -132,7 +146,6 @@ if __name__ == "__main__":
         input_dim = full_dataset.dim
         save_dir = os.path.join(os.getcwd(), 'models_SHAP', f'{GT_class}', f'SHAP_{SHAP_mode}')
 
-    category_ratio = full_dataset.get_ratio()
     print(f'Category : {category_ratio}')
     train_size = int(0.75 * len(full_dataset))
     valid_size = int(0.15 * len(full_dataset))
@@ -176,21 +189,22 @@ if __name__ == "__main__":
         # 訓練與測試
         if model_type == 'BiLSTM':
             model = BiLSTMModel(input_dim).to(device)
-        elif model_type == 'ResNet32':
+        elif model_type == 'Resnet32':
             model = ResNet32(input_dim).to(device)
-        P_ratio = category_ratio[GT_class]
         class_counts = torch.tensor([P_ratio, 1 - P_ratio])
         criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
         optimizer = optim.Adam(model.parameters(), lr=0.0001)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
         save_path = os.path.join(save_dir, f"{model_type}_model_seed{se}.pth")
-        fig_path = os.path.join(save_dir, f"{model_type}_train_results_seed{se}.png")
+        txt_dir = os.path.join(save_dir, f"{model_type}_train_results_seed{se}_results")
+        fig_path = os.path.join(txt_dir, f"{model_type}_train_results_seed{se}.png")
+        os.makedirs(txt_dir, exist_ok=True)
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
 
         avg_loss, f1, acc, avg_time_per_sample, false_positives, false_negatives = test_model_with_path_tracking(
-            model, test_loader, test_dataset, criterion, save_dir, save_path, full_dataset
+            model, test_loader, test_dataset, criterion, txt_dir, save_path, full_dataset
         )
 
         print(f"Seed {se} Test F1: {f1:.4f}")
@@ -203,4 +217,4 @@ if __name__ == "__main__":
             best_seed = se
             best_model_path = save_path
 
-    write_results(model, input_dim, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
+    write_results(model, input_dim, category_ratio, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
