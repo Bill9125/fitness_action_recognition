@@ -90,9 +90,9 @@ if __name__ == "__main__":
     
     from dataset.PatchTST import *
     if args.sport == 'deadlift':
-        dataset = os.path.join(os.getcwd(), 'data', '3D_Final')
+        dataset = os.path.join(os.getcwd(), 'data', '3D_Real_Final')
         full_dataset = Dataset_TST_Deadlift(dataset)
-        save_dir = f'./models/TST_Deadlift/11'
+        save_dir = f'./models/TST_Deadlift/12'
         num_classes = 4
         input_len = 110
     elif args.sport == 'benchpress':
