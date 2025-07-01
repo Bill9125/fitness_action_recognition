@@ -13,7 +13,6 @@ from dataset import *
 
 def test_model_with_path_tracking(model, test_loader, criterion, txt_dir, save_path, full_dataset, title = 'Confusion Matrix'):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(save_path)
     model.load_state_dict(torch.load(save_path))
     model.to(device)
     model.eval()
@@ -79,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('--GT_class',type=int)
     parser.add_argument('--SHAP',type=str, default=None)
     parser.add_argument('--F_type',type=str)
-    parser.add_argument('--model', type=str, default='Resnet32', choices=['ResNet32', 'BiLSTM'], help='Model type to use for training')
+    parser.add_argument('--model', type=str, default='Resnet32', choices=['Resnet32', 'BiLSTM'], help='Model type to use for training')
     parser.add_argument('--data',type=str)
     parser.add_argument('--sport', type=str, default='benchpress', choices=['benchpress', 'deadlift'], help='Sport type for the dataset')
     args = parser.parse_args()
