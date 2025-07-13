@@ -102,7 +102,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--GT_class',type=int)
     parser.add_argument('--SHAP',type=str, default=None)
-    parser.add_argument('--model', type=str, default='Resnet32', choices=['Resnet32', 'BiLSTM'], help='Model type to use for training')
+    parser.add_argument('--model', type=str, default='BiLSTM', choices=['Resnet32', 'BiLSTM'], help='Model type to use for training')
     parser.add_argument('--data',type=str)
     parser.add_argument('--sport', type=str, default='benchpress', choices=['benchpress', 'deadlift'], help='Sport type for the dataset')
     args = parser.parse_args()
@@ -113,7 +113,6 @@ if __name__ == "__main__":
     sport = args.sport
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
 
     if SHAP_mode is None:
         if sport == 'deadlift':

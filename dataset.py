@@ -387,13 +387,31 @@ class Dataset_Benchpress(Dataset):
         label_counter = {0: 0, 1: 0}
 
         for _, row in df.iterrows():
-            if row.iloc[61] == 1:
+            # 拿掉壓手腕資料
+            if row.iloc[96] == 1:
                 continue
-            data_1 = row.iloc[0:28].values.astype(float)
-            data_2 = row.iloc[32:52].values.astype(float)
-            data_3 = row.iloc[56:60].values.astype(float)
-            data = data_1.tolist() + data_2.tolist() + data_3.tolist()
-            ground_true = row.iloc[62:66].values.astype(int)
+            # 定義你要擷取的欄位範圍或索引
+            slices = [
+                (0, 3), (4, 8), (9, 13), (14, 18), (19, 23), (24, 28),  # data_1 to data_6
+                29,                                                    # data_7
+                (35, 38),                                              # data_8
+                39,                                                    # data_9
+                (50, 53), (54, 58), (59, 63), (64, 68),                # data_10 to data_13
+                69,                                                    # data_14
+                (75, 78),                                              # data_15
+                79,                                                    # data_16
+                (90, 93),                                              # data_17
+                94                                                     # data_18
+            ]
+
+            # 自動組合資料
+            data = []
+            for s in slices:
+                if isinstance(s, tuple):
+                    data.extend(row.iloc[s[0]:s[1]].values.astype(float).tolist())
+                else:
+                    data.append(row.iloc[s])
+            ground_true = row.iloc[97:101].values.astype(int)
             label = ground_true[GT_class]
             tmp_data.append(data)
             label_counter[label] += 1

@@ -77,43 +77,35 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--GT_class',type=int)
     parser.add_argument('--SHAP',type=str, default=None)
-    parser.add_argument('--F_type',type=str)
     parser.add_argument('--model', type=str, default='Resnet32', choices=['Resnet32', 'BiLSTM'], help='Model type to use for training')
     parser.add_argument('--data',type=str)
     parser.add_argument('--sport', type=str, default='benchpress', choices=['benchpress', 'deadlift'], help='Sport type for the dataset')
     args = parser.parse_args()
     GT_class = args.GT_class
     SHAP_mode = args.SHAP
-    F_type = args.F_type
     model_type = args.model
     data = args.data
     sport = args.sport
 
-    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if SHAP_mode is None:
-        if F_type == '2D':
-            if sport == 'deadlift':
-                data_path = os.path.join(os.getcwd(), 'data', data)
-                full_dataset = Dataset_dd2voz(data_path, GT_class)
-                save_dir = os.path.join(os.getcwd(), 'models', 'deadlift', model_type, str(GT_class))
-                category_ratio = full_dataset.get_ratio()
-                P_ratio = category_ratio[str(GT_class)]
-                
-            if sport == 'benchpress':
-                class_names = {0: 'tilting_to_the_left', 1: 'tilting_to_the_right', 2: 'elbows_flaring', 3: 'scapular_protraction'}
-                data_path = os.path.join(os.getcwd(), 'data', data, 'bench_press_multilabel_cut4.csv')
-                full_dataset = Dataset_Benchpress(data_path, GT_class)
-                save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data, class_names[GT_class])
-                os.makedirs(save_dir, exist_ok=True)
-                category_ratio = full_dataset.get_ratio()
-                P_ratio = category_ratio[1]
+        if sport == 'deadlift':
+            data_path = os.path.join(os.getcwd(), 'data', data)
+            full_dataset = Dataset_dd2voz(data_path, GT_class)
+            save_dir = os.path.join(os.getcwd(), 'models', 'deadlift', model_type, str(GT_class))
+            category_ratio = full_dataset.get_ratio()
+            P_ratio = category_ratio[str(GT_class)]
+            
+        if sport == 'benchpress':
+            class_names = {0: 'tilting_to_the_left', 1: 'tilting_to_the_right', 2: 'elbows_flaring', 3: 'scapular_protraction'}
+            data_path = os.path.join(os.getcwd(), 'data', data, 'bench_press_multilabel_cut4.csv')
+            full_dataset = Dataset_Benchpress(data_path, GT_class)
+            save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data, class_names[GT_class])
+            os.makedirs(save_dir, exist_ok=True)
+            category_ratio = full_dataset.get_ratio()
+            P_ratio = category_ratio[1]
 
-        elif F_type == '3D':
-            data_path = os.path.join(os.getcwd(), 'data', '3D_Final')
-            full_dataset = Dataset_3D(data_path, GT_class)
-            save_dir = os.path.join(os.getcwd(), 'models', '3D_Final_Resnet32', str(GT_class))
         input_dim = full_dataset.dim
         print('input_dim',input_dim)
     
@@ -144,8 +136,6 @@ if __name__ == "__main__":
         train_dataset = ResnetSubset(full_dataset, train_indices, transform=True)
         valid_dataset = ResnetSubset(full_dataset, valid_indices, transform=False)
         test_dataset  = ResnetSubset(full_dataset, test_indices, transform=False)
-        
-        train_labels = [full_dataset.labels[i] for i in train_dataset.indices]
         test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
         # 測試

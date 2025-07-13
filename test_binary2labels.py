@@ -83,6 +83,7 @@ if __name__ == "__main__":
             per_model_binary_preds = []  # 每一個模型的 binary 預測（0/1）
 
             for GT_class, class_name in class_names.items():
+                # 取得 test loader
                 test_loader, P_ratio, input_dim = dataset_setup(data_path, GT_class)
                 class_counts = torch.tensor([P_ratio, 1 - P_ratio])
                 criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
