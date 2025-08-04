@@ -98,8 +98,8 @@ if __name__ == "__main__":
     elif args.sport == 'benchpress':
         dataset = os.path.join(os.getcwd(), 'data', 'BP_data_new_skeleton', 'bench_press_multilabel_cut4.csv')
         full_dataset = Dataset_TST_Benchpress(dataset)
-        save_dir = './models/benchpress/TST_Benchpress/8'
-        num_classes = 5
+        save_dir = './models/benchpress/TST_Benchpress/9/wrist_press'
+        num_classes = 4
         input_len = 100
     input_dim = full_dataset.dim
     print('Input dimention',input_dim)

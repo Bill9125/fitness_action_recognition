@@ -70,7 +70,8 @@ def test_model_with_path_tracking(model, test_loader, criterion, txt_dir, save_p
     f1 = f1_score(y_true, y_pred, average='macro')
 
     # 繪製混淆矩陣
-    classes = ['Correct', 'wrists bending backward', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
+    # classes = ['Correct', 'wrists bending backward', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
+    classes = ['Correct', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
     # binary_classes = ['The barbell is moving away from the shins.', 'Hips rise before the barbell leaves the ground.', 'The barbell collides with the knees.', 'Lower back rounding']
     # classes = ['Correct', 'Far from the shins', 'Hips rise first', 'Collide with the knees', 'Lower back rounding']
     binary_classes = classes[1:]
@@ -113,18 +114,18 @@ if __name__ == "__main__":
         input_len = 110
         
     elif args.sport == 'benchpress':
-        dataset = os.path.join(os.getcwd(), 'data', 'BPdata', 'bench_press_multilabel_cut4.csv')
+        dataset = os.path.join(os.getcwd(), 'data', 'subject_test.csv')
         full_dataset = Dataset_TST_Benchpress(dataset)
-        save_dir = f'./models/TST_Benchpress/2'
+        save_dir = f'./models/benchpress/TST_Benchpress/9/no_wrist_press'
         num_classes = 4
         input_len = 100
         
     input_dim = full_dataset.dim
     print('Input dimention',input_dim)
     
-    train_size = int(0.75 * len(full_dataset))
-    valid_size = int(0.15 * len(full_dataset))
-    test_size = len(full_dataset) - train_size - valid_size
+    # train_size = int(0.75 * len(full_dataset))
+    # valid_size = int(0.15 * len(full_dataset))
+    # test_size = len(full_dataset) - train_size - valid_size
     
     best_f1 = -1
     best_seed = None
@@ -140,17 +141,17 @@ if __name__ == "__main__":
 
         # 分割資料
         gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        train_indices, valid_indices, test_indices = random_split(
-            range(len(full_dataset)), [train_size, valid_size, test_size],
-            generator=gen
-        )
+        # train_indices, valid_indices, test_indices = random_split(
+        #     range(len(full_dataset)), [train_size, valid_size, test_size],
+        #     generator=gen
+        # )
         
-        train_dataset = TransformSubset(full_dataset, train_indices, transform=True)
-        valid_dataset = TransformSubset(full_dataset, valid_indices, transform=False)
-        test_dataset  = TransformSubset(full_dataset, test_indices, transform=False)
+        # train_dataset = TransformSubset(full_dataset, train_indices, transform=True)
+        # valid_dataset = TransformSubset(full_dataset, valid_indices, transform=False)
+        test_dataset  = TransformSubset(full_dataset, [i for i in range(len(full_dataset))], transform=False)
 
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
+        # train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+        # valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
         test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
         # 訓練與測試
@@ -158,7 +159,6 @@ if __name__ == "__main__":
         criterion = torch.nn.BCEWithLogitsLoss()
 
         save_path = os.path.join(save_dir, f"PatchTST_model_seed{se}.pth")
-        fig_path = os.path.join(save_dir, f"PatchTST_train_results_seed{se}.png")
         
         avg_loss, f1, avg_time_per_sample, accuracy = test_model_with_path_tracking(
             model, test_loader, criterion, save_dir, save_path, full_dataset, num_classes
