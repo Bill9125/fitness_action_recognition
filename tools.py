@@ -2,6 +2,7 @@ import random
 import numpy as np
 import torch
 import os, sys
+import matplotlib.pyplot as plt
 
 def set_seed(seed):
     random.seed(seed)
@@ -43,6 +44,68 @@ def compute_f1_score(model, data_loader):
             y_pred.extend(predicted.cpu().numpy())
 
     return f1_score(y_true, y_pred)  
+
+def multilabel_confusion_matrix_mix(y_true, y_pred, n_classes):
+    cm = np.zeros((n_classes + 1, n_classes + 1), dtype=int)  # +1 for Category_0
+    offset = 1  # shift actual class indices by +1
+    dummy_class = 0  # Category_0 index
+
+    for yt, yp in zip(y_true, y_pred):
+        yt = np.array(yt)
+        yp = np.array(yp)
+
+        true_classes = np.where(yt == 1)[0]
+        pred_classes = np.where(yp == 1)[0]
+
+        if len(true_classes) == 0:
+            true_classes = [dummy_class]
+        else:
+            true_classes = [c + offset for c in true_classes]
+
+        if len(pred_classes) == 0:
+            pred_classes = [dummy_class]
+        else:
+            pred_classes = [c + offset for c in pred_classes]
+
+        for t in true_classes:
+            for p in pred_classes:
+                cm[t][p] += 1
+                
+
+    return cm
+
+def plot_custom_confusion_matrix(cm, class_names, save_path, f1):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+
+    ax.set_title(f"Confusion Matrix F1 : {(100*f1):.2f}")
+    ax.set_xticks(np.arange(len(class_names)))
+    ax.set_yticks(np.arange(len(class_names)))
+    ax.set_xticklabels(class_names, ha="right", rotation=45)
+    ax.set_yticklabels(class_names)
+
+    # 顯示數值與百分比
+    cm_sum = cm.sum(axis=1, keepdims=True)  # 每一列總數
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            count = cm[i, j]
+            total = cm_sum[i][0]
+            if total == 0:
+                percentage = 0
+            else:
+                percentage = count / total * 100
+            ax.text(j, i, f"{count}\n({percentage:.1f}%)",
+                    ha="center", va="center",
+                    color="white" if count > cm.max() * 0.5 else "black",
+                    fontsize=10)
+
+    ax.set_ylabel("True Label")
+    ax.set_xlabel("Predicted Label")
+    plt.tight_layout()
+    plt.colorbar(im, ax=ax)
+    plt.savefig(save_path)
+    plt.close()
+    
 
 def write_results(model, input_dim, category_ratio, seeds, all_f1_scores, all_sample_times, all_acc, best_f1, best_seed, best_model_path, save_dir):
     # 🔍 顯示結果 & 建立結果字串

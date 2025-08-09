@@ -125,14 +125,14 @@ if __name__ == "__main__":
             P_ratio = category_ratio[str(GT_class)]
             
         if sport == 'benchpress':
-            class_names = {0: 'wrists_bending_backward', 1: 'tilting_to_the_left', 2: 'tilting_to_the_right', 3: 'elbows_flaring', 4: 'scapular_protraction'}
+            class_names = {0: 'tilting_to_the_left', 1: 'tilting_to_the_right', 2: 'elbows_flaring', 3: 'scapular_protraction'}
             data_path = os.path.join(os.getcwd(), 'data', data, 'bench_press_multilabel_cut4.csv')
             full_dataset = Dataset_Benchpress(data_path, GT_class)
             save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data, 'wrist_press', class_names[GT_class])
             os.makedirs(save_dir, exist_ok=True)
             category_ratio = full_dataset.get_ratio()
             P_ratio = category_ratio[1]
-                
+            
         input_dim = full_dataset.dim
         print('input_dim',input_dim)
     

@@ -375,7 +375,7 @@ class Dataset_3D(Dataset):
         return x + noise
     
 class Dataset_Benchpress(Dataset):
-    def __init__(self, dataset_root, GT_class):
+    def __init__(self, dataset_root, GT_class, wrist):
         self.sample_paths = []  
         self.features = []
         self.labels = []
@@ -387,6 +387,7 @@ class Dataset_Benchpress(Dataset):
         label_counter = {0: 0, 1: 0}
 
         for _, row in df.iterrows():
+            row.iloc[[54, 55]] = row.iloc[[55, 54]]
             # 拿掉壓手腕資料
             # if row.iloc[96] == 1:
             #     continue
@@ -411,9 +412,12 @@ class Dataset_Benchpress(Dataset):
             #         data.extend(row.iloc[s[0]:s[1]].values.astype(float).tolist())
             #     else:
             #         data.append(row.iloc[s])
-                    
+            
             data = row.iloc[0:52].values.astype(float).tolist()
-            label = row.iloc[53 + GT_class]
+            if wrist:
+                label = row.iloc[53 + GT_class]
+            else:
+                label = row.iloc[53 + GT_class + 1]
             # ground_true = row.iloc[96:101].values.astype(int)
             # label = ground_true[GT_class]
             tmp_data.append(data)
