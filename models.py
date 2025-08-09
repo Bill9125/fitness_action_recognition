@@ -95,29 +95,3 @@ class PatchEmbedding(nn.Module):
         x = self.proj(x)  # (B, F, num_patches, embed_dim)
         x = x.permute(0, 2, 1, 3).reshape(B, -1, self.embed_dim)  # (B, F*num_patches, embed_dim)
         return x
-
-class PatchTSTClassifier(nn.Module):
-    def __init__(self, input_len=110, patch_len=10, input_dim=25,
-                 embed_dim=256, num_heads=4, num_layers=4, num_classes=4, dropout=0.1, stride=None):
-        super().__init__()
-        self.patch_embed = PatchEmbedding(input_len, patch_len, input_dim, embed_dim, stride=stride)
-
-        num_patches = (input_len - patch_len) // (stride if stride else patch_len) + 1
-        self.pos_embed = nn.Parameter(torch.randn(1, num_patches * input_dim, embed_dim))
-
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, nhead=num_heads, dropout=dropout, batch_first=True
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Linear(embed_dim, num_classes)
-        )
-
-    def forward(self, x):
-        x = self.patch_embed(x)  # (B, tokens, embed_dim)
-        x = x + self.pos_embed[:, :x.size(1), :]  # safe positional embed
-        x = self.transformer(x)
-        x = x.mean(dim=1)
-        return self.classifier(x)
