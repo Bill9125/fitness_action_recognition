@@ -131,35 +131,34 @@ if __name__ == "__main__":
     for se in seeds:
         set_seed(se)
         
-        random_keys = random.sample(list(map(int, data.keys())), 20)
-        test_data = {str(k): data[str(k)] for k in random_keys}
-        train_data = {str(k): data[str(k)] for k in data if int(k) not in random_keys}
+        # random_keys = random.sample(list(map(int, data.keys())), 20)
+        # test_data = {str(k): data[str(k)] for k in random_keys}
+        # train_data = {str(k): data[str(k)] for k in data if int(k) not in random_keys}
         
-        full_train_dataset = Dataset_Benchpress(train_data, GT_class)
-        test_dataset = Dataset_Benchpress(test_data, GT_class)
+        full_dataset = Dataset_Benchpress(data, GT_class)
         
-        category_ratio = full_train_dataset.get_ratio()
+        category_ratio = full_dataset.get_ratio()
         P_ratio = category_ratio[1]
-        input_dim = full_train_dataset.dim
+        input_dim = full_dataset.dim
         print('input_dim',input_dim)
         print(f'Category : {category_ratio}')
         
-        train_size = int(0.85 * len(full_train_dataset))
-        valid_size = int(len(full_train_dataset)) - train_size
-        test_size = int(len(test_dataset))
-        print(f'total training size : {len(full_train_dataset)}')
+        train_size = int(0.75 * len(full_dataset))
+        valid_size = int(0.15 * len(full_dataset))
+        test_size = int(len(full_dataset)) - train_size - valid_size
         print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
         
         # 分割資料
         gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        train_indices, valid_indices = random_split(
-            range(len(full_train_dataset)), [train_size, valid_size],
+        train_indices, valid_indices, test_indices = random_split(
+            range(len(full_dataset)), [train_size, valid_size, test_size],
             generator=gen
         )
-        train_dataset = ResnetSubset(full_train_dataset, train_indices, transform=True)
-        valid_dataset = ResnetSubset(full_train_dataset, valid_indices, transform=False)
+        train_dataset = ResnetSubset(full_dataset, train_indices, transform=True)
+        valid_dataset = ResnetSubset(full_dataset, valid_indices, transform=False)
+        test_dataset = ResnetSubset(full_dataset, test_indices, transform=False)
         
-        train_labels = [full_train_dataset.labels[i] for i in train_dataset.indices]
+        train_labels = [full_dataset.labels[i] for i in train_dataset.indices]
 
         # 建立 Weighted Sampler
         class_weights = [1.0 / sum(np.array(train_labels) == i) for i in range(2)]
