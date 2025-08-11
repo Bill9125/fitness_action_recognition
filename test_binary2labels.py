@@ -9,9 +9,10 @@ from models import ResNet32, BiLSTMModel
 from torch.nn import CrossEntropyLoss
 from sklearn.metrics import accuracy_score
 from dataset.dataset import *
+import numpy as np
 
-def test_model_with_path_tracking(model, test_loader, criterion, save_path, full_dataset, title = 'Confusion Matrix'):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def test_model_with_path_tracking(model, test_loader, criterion, save_path, title = 'Confusion Matrix'):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(save_path))
     model.to(device)
     model.eval()
@@ -19,8 +20,6 @@ def test_model_with_path_tracking(model, test_loader, criterion, save_path, full
     total_loss, total_time = 0.0, 0.0  
     y_true, y_pred = [], []
 
-    false_positives = []
-    false_negatives = []
     
     with torch.no_grad():
         for inputs, labels, indices in test_loader:
@@ -34,15 +33,6 @@ def test_model_with_path_tracking(model, test_loader, criterion, save_path, full
             loss = criterion(outputs, labels)
             total_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
-
-            for i in range(len(inputs)):  # 只迭代當前批次中的實際樣本數量
-                sample_idx = indices[i].item()  # 直接拿到 full_dataset index！
-                detailed_path = full_dataset.get_sample_path(sample_idx)
-                
-                if predicted[i] == 1 and labels[i] == 0:
-                    false_positives.append(f"{str(detailed_path)}")
-                elif predicted[i] == 0 and labels[i] == 1:
-                    false_negatives.append(f"{str(detailed_path)}")
                     
             y_true.extend(labels.cpu().numpy())
             y_pred.extend(predicted.cpu().numpy())
@@ -52,7 +42,7 @@ def test_model_with_path_tracking(model, test_loader, criterion, save_path, full
     f1 = f1_score(y_true, y_pred)
     acc = accuracy_score(y_true, y_pred) 
 
-    return y_true, y_pred
+    return y_true, y_pred, f1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -61,51 +51,42 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir',type=str)
     args = parser.parse_args()
     model_type = args.model
-    data = args.data
+    data_file = args.data
     output_dir = args.output_dir
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")   
-    dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, 'BP_data_new_skeleton', 'no_wrist_press')
-    class_names = {0: 'tilting_to_the_right', 1: 'tilting_to_the_left', 2: 'elbows_flaring', 3: 'scapular_protraction'}
-        
+    dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, 'BP_data_new_skeleton', 'test_assigned_20')
+    class_names = {0: 'tilting_to_the_left', 1: 'tilting_to_the_right', 2: 'elbows_flaring', 3: 'scapular_protraction'}
+    
     results_dir = os.path.join(dir, output_dir)
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
-    data_path = os.path.join(os.getcwd(), 'data', data, 'data.json')
+    data_path = os.path.join(os.getcwd(), 'data', data_file, 'data.json')
     with open(data_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    all_f1 = []
+    all_f1 = {v : [] for v in class_names.values()}
     seeds = [42, 2023, 7, 88, 100, 999]
 
     for se in seeds:
         print(f'Testing seed: {se}')
+        gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
         set_seed(se)
         y_ts = {i: [] for i in range(len(class_names))}
         y_ps = {i: [] for i in range(len(class_names))}
+        random_keys = random.sample(list(map(int, data.keys())), 20)
+        test_data = {str(k): data[str(k)] for k in random_keys}
+        train_data = {str(k): data[str(k)] for k in data if int(k) not in random_keys}
         for GT_class, class_name in class_names.items():
             model_path = os.path.join(dir, class_name, f"{model_type}_model_seed{se}.pth")
             
             # 讀取 dataset
-            full_dataset = Dataset_Benchpress(data_path, GT_class)
-            train_size = int(0.75 * len(full_dataset))
-            valid_size = int(0.15 * len(full_dataset))
-            test_size = len(full_dataset) - train_size - valid_size
+            full_train_dataset = Dataset_Benchpress(train_data, GT_class)
+            test_dataset = Dataset_Benchpress(test_data, GT_class)
+            test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
             
-            # 分割資料
-            gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-            train_indices, valid_indices, test_indices = random_split(
-                range(len(full_dataset)), [train_size, valid_size, test_size],
-                generator=gen
-            )
-            
-            train_dataset = ResnetSubset(full_dataset, train_indices, transform=True)
-            valid_dataset = ResnetSubset(full_dataset, valid_indices, transform=False)
-            test_dataset  = ResnetSubset(full_dataset, test_indices, transform=False)
-            test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
-            
-            category_ratio = full_dataset.get_ratio()
+            category_ratio = full_train_dataset.get_ratio()
             P_ratio = category_ratio[1]
-            input_dim = full_dataset.dim
+            input_dim = full_train_dataset.dim
 
             # 測試
             if model_type == 'BiLSTM':
@@ -115,26 +96,43 @@ if __name__ == "__main__":
             class_counts = torch.tensor([P_ratio, 1 - P_ratio])
             criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
 
-            y_true, y_pred = test_model_with_path_tracking(
-                model, test_loader, criterion, model_path, full_dataset, title=class_names[GT_class]
+            y_true, y_pred, f1 = test_model_with_path_tracking(
+                model, test_loader, criterion, model_path, title=class_names[GT_class]
             )
             y_ts[GT_class].extend([y.astype(int) for y in y_true])
             y_ps[GT_class].extend([y.astype(int) for y in y_pred])
+            all_f1[class_name].append((se, f'{f1:.4f}'))
             
         y_ts = np.array(list(y_ts.values())).T
         y_ps = np.array(list(y_ps.values())).T
-        f1 = f1_score(y_ts, y_ps, average='macro')
-        all_f1.append(f1)
-
+        
         cm = multilabel_confusion_matrix_mix(y_ts, y_ps, len(class_names))
         print('Finished calculating confusion matrix for seed:', se)
         plot_custom_confusion_matrix(cm, ['right'] + list(class_names.values()), f"{results_dir}/confusion_matrix_mix_{se}.png", f1)
         
-    with open(f"{results_dir}/test_summary.json", 'w') as f:
-        json.dump({
-            'model': model_type,
-            'training data': 'BP_data_new_skeleton',
-            'testing data': data,
-            'best seed': seeds[np.argmax(all_f1)],
-            'f1 score': np.max(np.array(all_f1))
-        }, f, indent=4)
+    best_f1 = -1
+    for class_name, tups in all_f1.items():
+        f1s = []
+        for tup in tups:
+            f1s.append(float(tup[1]))
+        f1s = np.array(f1s)
+        all_f1[class_name].append(f'{np.mean(f1s):.4f} ± {np.std(f1s):.4f}')
+        
+    with open(f"{results_dir}/test_summary.txt", 'w', encoding="utf-8") as f:
+        f.write(f"Model: {model_type}\n")
+        f.write(f"Training Data: BP_data_new_skeleton\n")
+        f.write(f"Testing Data: {data_file}\n")
+        f.write("="*80 + "\n")
+        f.write("F1 Score Results\n")
+        f.write("="*80 + "\n\n")
+        
+        for class_name, scores in all_f1.items():
+            f.write(f"Class: {class_name.replace('_', ' ').title()}\n")
+            f.write("-" * 50 + "\n")
+            
+            # 寫入各個 seed 的結果
+            for seed, score in scores[:-1]:  # 排除最後的統計值
+                f.write(f"  Seed {seed:4d}: {score}\n")
+            
+            # 寫入平均值和標準差
+            f.write(f"  Average:    {scores[-1]}\n\n")
