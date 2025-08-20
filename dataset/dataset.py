@@ -1,4 +1,4 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 import torch
 import random
 
@@ -37,7 +37,7 @@ class Dataset_Benchpress(Dataset):
             category_ratio[1] = self.count_info[1] / total
         return category_ratio
 
-class ResnetSubset(torch.utils.data.Dataset):
+class ResnetSubset(Subset):
     def __init__(self, dataset, indices, transform=False):
         self.dataset = dataset
         self.indices = indices

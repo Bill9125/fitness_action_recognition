@@ -126,39 +126,56 @@ if __name__ == "__main__":
     all_f1_scores = []
     all_avg_times = []
     all_acc = []
-    seeds = [42, 2023, 7, 88, 100, 999]
+    # 打亂所有 keys
+    all_keys = list(map(int, data.keys()))
+    random.shuffle(all_keys)
 
-    for se in seeds:
-        set_seed(se)
+    # 切成六份
+    num_folds = 6
+    fold_size = len(all_keys) // num_folds
+    folds = [all_keys[i*fold_size:(i+1)*fold_size] for i in range(num_folds)]
+
+    # 如果不能整除，把剩下的分配到前幾份
+    remainder = len(all_keys) % num_folds
+    for i in range(remainder):
+        folds[i].append(all_keys[num_folds*fold_size + i])
+    
+    # 生成六組 train/test
+    datasets = []
+    for i in range(num_folds):
+        test_keys = folds[i]
+        train_keys = [k for j, f in enumerate(folds) if j != i for k in f]
+
+        test_data = {str(k): data[str(k)] for k in test_keys}
+        train_data = {str(k): data[str(k)] for k in train_keys}
+        datasets.append((train_data, test_data))
         
-        # random_keys = random.sample(list(map(int, data.keys())), 20)
-        # test_data = {str(k): data[str(k)] for k in random_keys}
-        # train_data = {str(k): data[str(k)] for k in data if int(k) not in random_keys}
+    for i, (train_data, test_data) in enumerate(datasets):
+        train_valid_dataset = Dataset_Benchpress(train_data, GT_class)
+        test_dataset = Dataset_Benchpress(test_data, GT_class)
+        all_indices = list(range(len(train_valid_dataset)))
+        random.shuffle(all_indices)
         
-        full_dataset = Dataset_Benchpress(data, GT_class)
-        
-        category_ratio = full_dataset.get_ratio()
+        category_ratio = train_valid_dataset.get_ratio()
         P_ratio = category_ratio[1]
-        input_dim = full_dataset.dim
+        input_dim = train_valid_dataset.dim
         print('input_dim',input_dim)
         print(f'Category : {category_ratio}')
         
-        train_size = int(0.75 * len(full_dataset))
-        valid_size = int(0.15 * len(full_dataset))
-        test_size = int(len(full_dataset)) - train_size - valid_size
+        
+        train_size = int(0.85 * len(train_valid_dataset))
+        valid_size = int(len(train_valid_dataset)) - train_size
+        test_size = int(len(test_dataset))
         print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
         
-        # 分割資料
-        gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        train_indices, valid_indices, test_indices = random_split(
-            range(len(full_dataset)), [train_size, valid_size, test_size],
-            generator=gen
-        )
-        train_dataset = ResnetSubset(full_dataset, train_indices, transform=True)
-        valid_dataset = ResnetSubset(full_dataset, valid_indices, transform=False)
-        test_dataset = ResnetSubset(full_dataset, test_indices, transform=False)
+        train_indices = all_indices[:train_size]
+        valid_indices = all_indices[train_size:]
         
-        train_labels = [full_dataset.labels[i] for i in train_dataset.indices]
+        train_dataset = ResnetSubset(train_valid_dataset, train_indices, transform=True)
+        valid_dataset = ResnetSubset(train_valid_dataset, valid_indices, transform=False)
+        test_dataset = ResnetSubset(test_dataset, list(range(test_size)), transform=False)
+        
+        train_labels = [train_valid_dataset.labels[i] for i in train_indices]
 
         # 建立 Weighted Sampler
         class_weights = [1.0 / sum(np.array(train_labels) == i) for i in range(2)]
@@ -181,9 +198,9 @@ if __name__ == "__main__":
         optimizer = optim.Adam(model.parameters(), lr=0.0001)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
-        save_path = os.path.join(save_dir, f"{model_type}_model_seed{se}.pth")
-        txt_dir = os.path.join(save_dir, f"{model_type}_train_results_seed{se}_results")
-        fig_path = os.path.join(txt_dir, f"{model_type}_train_results_seed{se}.png")
+        save_path = os.path.join(save_dir, f"{model_type}_model_fold{i}.pth")
+        txt_dir = os.path.join(save_dir, f"{model_type}_train_results_fold{i}_results")
+        fig_path = os.path.join(txt_dir, f"{model_type}_train_results_fold{i}.png")
         os.makedirs(txt_dir, exist_ok=True)
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
@@ -192,14 +209,14 @@ if __name__ == "__main__":
             model, test_loader, criterion, txt_dir, save_path, title=class_names[GT_class]
         )
 
-        print(f"Seed {se} Test F1: {f1:.4f}")
+        print(f"Fold {i} Test F1: {f1:.4f}")
         all_f1_scores.append(f1)
         all_avg_times.append(avg_time_per_sample)
         all_acc.append(acc)
 
         if f1 > best_f1:
             best_f1 = f1
-            best_seed = se
+            best_seed = i
             best_model_path = save_path
 
-    write_results(model, input_dim, category_ratio, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
+    write_results(model, input_dim, category_ratio, num_folds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
