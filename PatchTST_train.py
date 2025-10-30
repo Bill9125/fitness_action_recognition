@@ -100,24 +100,36 @@ if __name__ == "__main__":
         data_path = os.path.join(os.getcwd(), 'data', 'BP_data_new_skeleton', 'data.json')
         with open(data_path, 'r', encoding='utf-8') as f:
             all_data = json.load(f)
-            
-        if args.split_training:
-            random_keys = random.sample(list(map(int, all_data.keys())), 20)
-            test_data = {str(k): all_data[str(k)] for k in random_keys}
-            train_data = {str(k): all_data[str(k)] for k in all_data if int(k) not in random_keys}
-            test_dataset  = Dataset_Benchpress(test_data)
         
-        full_dataset = Dataset_Benchpress(train_data)
+        if args.split_training:
+            # 打亂所有 keys
+            all_keys = list(map(int, all_data.keys()))
+            random.shuffle(all_keys)
+
+            # 切成六份
+            num_folds = 6
+            fold_size = len(all_keys) // num_folds
+            folds = [all_keys[i*fold_size:(i+1)*fold_size] for i in range(num_folds)]
+            
+            # 如果不能整除，把剩下的分配到前幾份
+            remainder = len(all_keys) % num_folds
+            for i in range(remainder):
+                folds[i].append(all_keys[num_folds*fold_size + i])
+                
+            # 生成六組 train/test
+            datasets = []
+            for i in range(num_folds):
+                test_keys = folds[i]
+                train_keys = [k for j, f in enumerate(folds) if j != i for k in f]
+
+                test_data = {str(k): all_data[str(k)] for k in test_keys}
+                train_data = {str(k): all_data[str(k)] for k in train_keys}
+                datasets.append((train_data, test_data))
+        
         save_dir = './models/benchpress/TST_Benchpress/Exp2/no_wrist_press'
         num_classes = 4
         input_len = 100
-    input_dim = full_dataset.dim
-    print('Input dimention',input_dim)
-    
-    train_size = int(0.85 * len(full_dataset))
-    valid_size = int(len(full_dataset)) - train_size
-    test_size = int(len(test_dataset))
-    
+        
     best_f1 = -1
     best_seed = None
     best_model_path = ""
@@ -125,20 +137,33 @@ if __name__ == "__main__":
     all_f1_scores = []
     cost_times = []
     accuracies = []
-    seeds = [42, 2023, 7, 88, 100, 999]
 
-    for se in seeds:
-        set_seed(se)
+    for i, (train_data, test_data) in enumerate(datasets):
+        # set_seed(se)
 
         # 分割資料
-        gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        train_indices, valid_indices = random_split(
-            range(len(full_dataset)), [train_size, valid_size],
-            generator=gen
-        )
+        # gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
+        # train_indices, valid_indices = random_split(
+        #     range(len(full_dataset)), [train_size, valid_size],
+        #     generator=gen
+        # )
+        train_valid_dataset = Dataset_Benchpress(train_data)
+        test_dataset = Dataset_Benchpress(test_data)
+        all_indices = list(range(len(train_valid_dataset)))
+        random.shuffle(all_indices)
         
-        train_dataset = Datasubset(full_dataset, train_indices, transform=True)
-        valid_dataset = Datasubset(full_dataset, valid_indices, transform=False)
+        input_dim = train_valid_dataset.dim
+        print('Input dimention',input_dim)
+        
+        train_size = int(0.85 * len(train_valid_dataset))
+        valid_size = int(len(train_valid_dataset)) - train_size
+        test_size = int(len(test_dataset))
+        print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
+        train_indices = all_indices[:train_size]
+        valid_indices = all_indices[train_size:]
+        
+        train_dataset = Datasubset(train_valid_dataset, train_indices, transform=True)
+        valid_dataset = Datasubset(train_valid_dataset, valid_indices, transform=False)
 
         train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
         valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
@@ -150,9 +175,9 @@ if __name__ == "__main__":
         criterion = torch.nn.BCEWithLogitsLoss()
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
-        save_path = os.path.join(save_dir, f"PatchTST_model_seed{se}.pth")
-        txt_dir = os.path.join(save_dir, f"PatchTST_model_seed{se}_results")
-        fig_path = os.path.join(txt_dir, f"train_results_seed{se}.png")
+        save_path = os.path.join(save_dir, f"PatchTST_model_fold{i}.pth")
+        txt_dir = os.path.join(save_dir, f"PatchTST_model_fold{i}_results")
+        fig_path = os.path.join(txt_dir, f"train_results_fold{i}.png")
         os.makedirs(txt_dir, exist_ok=True)
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
@@ -160,14 +185,14 @@ if __name__ == "__main__":
         avg_loss, f1, avg_time_per_sample, accuracy = test_model_with_path_tracking(
             model, test_loader, criterion, txt_dir, save_path, num_classes
         )
-        print(f"Seed {se} Test F1: {f1:.4f}, Accuracy: {accuracy:.4f}, cost {avg_time_per_sample} sec")
+        print(f"Fold {i} Test F1: {f1:.4f}, Accuracy: {accuracy:.4f}, cost {avg_time_per_sample} sec")
         all_f1_scores.append(f1)
         cost_times.append(avg_time_per_sample)
         accuracies.append(accuracy)
 
         if f1 > best_f1:
             best_f1 = f1
-            best_seed = se
+            best_seed = i
             best_model_path = save_path
 
-    write_result(model, seeds, all_f1_scores, accuracies, cost_times, save_dir, best_f1, best_seed, best_model_path)
+    write_result(model, num_folds, all_f1_scores, accuracies, cost_times, save_dir, best_f1, best_seed, best_model_path)
