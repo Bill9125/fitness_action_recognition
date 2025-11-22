@@ -10,6 +10,7 @@ from sklearn.metrics import f1_score
 from tools import *
 import argparse
 from PatchTST_test import test_model_with_path_tracking
+import math
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=150, patience=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,8 +80,30 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")  # 儲存高解析度圖片
-    
 
+def get_warmup_cosine_scheduler(
+    optimizer,
+    warmup_epochs: int,
+    max_epochs: int,
+    min_lr_ratio: float = 0.0,
+):
+    """
+    warmup_epochs:   線性 warmup epoch 數（從 0 -> base_lr）
+    max_epochs:      總訓練 epoch 數
+    min_lr_ratio:    最小 lr / base_lr，比方 0.0 就是衰到 0
+    """
+    assert warmup_epochs < max_epochs
+
+    def lr_lambda(current_epoch):
+        if current_epoch < warmup_epochs:
+            # 線性 warmup: 0 -> 1
+            return float(current_epoch + 1) / float(warmup_epochs)
+        # cosine decay: 1 -> min_lr_ratio
+        progress = (current_epoch - warmup_epochs) / float(max_epochs - warmup_epochs)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,13 +120,13 @@ if __name__ == "__main__":
         num_classes = 4
         input_len = 110
     elif args.sport == 'benchpress':
-        data_path = os.path.join(os.getcwd(), 'data', 'BP_data_new_skeleton', 'data.json')
+        data_path = os.path.join(os.getcwd(), 'data', 'BP_data_new_angle', 'data_wrist.json')
         with open(data_path, 'r', encoding='utf-8') as f:
             all_data = json.load(f)
-        
+        seeds = [42, 2023, 7, 88, 100, 999]
         if args.split_training:
             # 打亂所有 keys
-            all_keys = list(map(int, all_data.keys()))
+            all_keys = list(map(str, all_data.keys()))
             random.shuffle(all_keys)
 
             # 切成六份
@@ -125,9 +148,24 @@ if __name__ == "__main__":
                 test_data = {str(k): all_data[str(k)] for k in test_keys}
                 train_data = {str(k): all_data[str(k)] for k in train_keys}
                 datasets.append((train_data, test_data))
-        
-        save_dir = './models/benchpress/TST_Benchpress/Exp2/no_wrist_press'
-        num_classes = 4
+        else:
+            # 打亂所有 keys
+            all_keys = list(map(str, all_data.keys()))
+            datasets = []
+            for se in seeds:
+                set_seed(se)
+                random.shuffle(all_keys)
+                
+                train_len = int(len(all_keys) * 0.9)
+                train_keys = all_keys[:train_len]
+                test_keys = all_keys[train_len:]
+
+                train_data = {str(k): all_data[str(k)] for k in train_keys}
+                test_data = {str(k): all_data[str(k)] for k in test_keys}
+                datasets.append((train_data, test_data))
+            
+        save_dir = './models/benchpress/TST_Benchpress/Exp3/random_seed_wrist_press'
+        num_classes = 5
         input_len = 100
         
     best_f1 = -1
@@ -155,7 +193,7 @@ if __name__ == "__main__":
         input_dim = train_valid_dataset.dim
         print('Input dimention',input_dim)
         
-        train_size = int(0.85 * len(train_valid_dataset))
+        train_size = int(0.9 * len(train_valid_dataset))
         valid_size = int(len(train_valid_dataset)) - train_size
         test_size = int(len(test_dataset))
         print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
@@ -165,15 +203,15 @@ if __name__ == "__main__":
         train_dataset = Datasubset(train_valid_dataset, train_indices, transform=True)
         valid_dataset = Datasubset(train_valid_dataset, valid_indices, transform=False)
 
-        train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
         # 訓練與測試
         model = PatchTSTClassifier(input_dim, num_classes, input_len).to(device)
         optimizer = optim.Adam(model.parameters(), lr=0.0001)
         criterion = torch.nn.BCEWithLogitsLoss()
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
+        scheduler = get_warmup_cosine_scheduler(optimizer, warmup_epochs=5, max_epochs=100, min_lr_ratio=0.0)
 
         save_path = os.path.join(save_dir, f"PatchTST_model_fold{i}.pth")
         txt_dir = os.path.join(save_dir, f"PatchTST_model_fold{i}_results")

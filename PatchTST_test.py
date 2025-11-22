@@ -48,8 +48,8 @@ def test_model_with_path_tracking(model, test_loader, criterion, txt_dir, save_p
     f1 = f1_score(y_true, y_pred, average='macro')
 
     # 繪製混淆矩陣
-    # classes = ['Correct', 'wrists bending backward', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
-    classes = ['Correct', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
+    classes = ['Correct', 'wrists bending backward', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
+    # classes = ['Correct', 'tilting to the right', 'tilting to the left', 'elbows flaring', 'scapular protraction']
     # binary_classes = ['The barbell is moving away from the shins.', 'Hips rise before the barbell leaves the ground.', 'The barbell collides with the knees.', 'Lower back rounding']
     # classes = ['Correct', 'Far from the shins', 'Hips rise first', 'Collide with the knees', 'Lower back rounding']
     binary_classes = classes[1:]
