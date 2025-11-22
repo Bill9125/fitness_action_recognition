@@ -13,6 +13,7 @@ from tools import set_seed, f1_score, compute_f1_score, write_results
 from test import test_model_with_path_tracking
 from dataset import *
 import json, random
+import math
 
 
 def train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path, num_epochs=100, patience=8):
@@ -97,6 +98,30 @@ def validate_model(model, valid_loader, criterion):
             total_loss += loss.item()
     return total_loss / len(valid_loader)
 
+def get_warmup_cosine_scheduler(
+    optimizer,
+    warmup_epochs: int,
+    max_epochs: int,
+    min_lr_ratio: float = 0.0,
+):
+    """
+    warmup_epochs:   線性 warmup epoch 數（從 0 -> base_lr）
+    max_epochs:      總訓練 epoch 數
+    min_lr_ratio:    最小 lr / base_lr，比方 0.0 就是衰到 0
+    """
+    assert warmup_epochs < max_epochs
+
+    def lr_lambda(current_epoch):
+        if current_epoch < warmup_epochs:
+            # 線性 warmup: 0 -> 1
+            return float(current_epoch + 1) / float(warmup_epochs)
+        # cosine decay: 1 -> min_lr_ratio
+        progress = (current_epoch - warmup_epochs) / float(max_epochs - warmup_epochs)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
 # ----------------------
 # (6) Main Execution
 # ----------------------
@@ -110,10 +135,10 @@ if __name__ == "__main__":
     model_type = args.model
     data_file = args.data
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    class_names = {0: 'tilting_to_the_left', 1: 'tilting_to_the_right', 2: 'elbows_flaring', 3: 'scapular_protraction'}
+    class_names = {0: 'wrists_bending_backward', 1: 'tilting_to_the_left', 2: 'tilting_to_the_right', 3: 'elbows_flaring', 4: 'scapular_protraction'}
     
-    data_path = os.path.join(os.getcwd(), 'data', data_file, 'data.json')
-    save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data_file, 'test_random_20', class_names[GT_class])
+    data_path = os.path.join(os.getcwd(), 'data', data_file, 'data_wrist.json')
+    save_dir = os.path.join(os.getcwd(), 'models', 'benchpress', model_type, data_file, 'test_random_seed_wrist', class_names[GT_class])
     os.makedirs(save_dir, exist_ok=True)
     print(f'read {data_path} as dataset ...')
     with open(data_path, 'r', encoding='utf-8') as f:
@@ -127,24 +152,39 @@ if __name__ == "__main__":
     all_avg_times = []
     all_acc = []
     # 打亂所有 keys
-    all_keys = list(map(int, data.keys()))
-    random.shuffle(all_keys)
+    all_keys = list(map(str, data.keys()))
+    # random.shuffle(all_keys)
 
-    # 切成六份
-    num_folds = 6
-    fold_size = len(all_keys) // num_folds
-    folds = [all_keys[i*fold_size:(i+1)*fold_size] for i in range(num_folds)]
+    # # 切成六份
+    # num_folds = 6
+    # fold_size = len(all_keys) // num_folds
+    # folds = [all_keys[i*fold_size:(i+1)*fold_size] for i in range(num_folds)]
 
-    # 如果不能整除，把剩下的分配到前幾份
-    remainder = len(all_keys) % num_folds
-    for i in range(remainder):
-        folds[i].append(all_keys[num_folds*fold_size + i])
+    # # 如果不能整除，把剩下的分配到前幾份
+    # remainder = len(all_keys) % num_folds
+    # for i in range(remainder):
+    #     folds[i].append(all_keys[num_folds*fold_size + i])
     
-    # 生成六組 train/test
+    # # 生成六組 train/test
+    # datasets = []
+    # for i in range(num_folds):
+    #     test_keys = folds[i]
+    #     train_keys = [k for j, f in enumerate(folds) if j != i for k in f]
+
+    #     test_data = {str(k): data[str(k)] for k in test_keys}
+    #     train_data = {str(k): data[str(k)] for k in train_keys}
+    #     datasets.append((train_data, test_data))
+
+    n_total = len(all_keys)
+    split_idx = int(n_total * 0.9)
+    seeds = [42, 2023, 7, 88, 100, 999]
     datasets = []
-    for i in range(num_folds):
-        test_keys = folds[i]
-        train_keys = [k for j, f in enumerate(folds) if j != i for k in f]
+    for se in seeds:
+        set_seed(se)
+        perm = torch.randperm(n_total).tolist() 
+        shuffled_keys = [all_keys[i] for i in perm]
+        train_keys = shuffled_keys[:split_idx]
+        test_keys = shuffled_keys[split_idx:]
 
         test_data = {str(k): data[str(k)] for k in test_keys}
         train_data = {str(k): data[str(k)] for k in train_keys}
@@ -162,8 +202,7 @@ if __name__ == "__main__":
         print('input_dim',input_dim)
         print(f'Category : {category_ratio}')
         
-        
-        train_size = int(0.85 * len(train_valid_dataset))
+        train_size = int(0.95 * len(train_valid_dataset))
         valid_size = int(len(train_valid_dataset)) - train_size
         test_size = int(len(test_dataset))
         print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
@@ -184,9 +223,9 @@ if __name__ == "__main__":
                                 num_samples=len(train_dataset),
                                 replacement=True)
 
-        train_loader = DataLoader(train_dataset, batch_size=8, sampler=sampler)
-        valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
+        valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
         # 訓練與測試
         if model_type == 'BiLSTM':
@@ -195,12 +234,17 @@ if __name__ == "__main__":
             model = ResNet32(input_dim).to(device)
         class_counts = torch.tensor([P_ratio, 1 - P_ratio])
         criterion = CrossEntropyLoss(weight=(1.0 / class_counts).to(device))
-        optimizer = optim.Adam(model.parameters(), lr=0.0001)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2)
+        scheduler = get_warmup_cosine_scheduler(
+            optimizer,
+            warmup_epochs=5,
+            max_epochs=100,
+            min_lr_ratio=0.01,
+        )
 
-        save_path = os.path.join(save_dir, f"{model_type}_model_fold{i}.pth")
-        txt_dir = os.path.join(save_dir, f"{model_type}_train_results_fold{i}_results")
-        fig_path = os.path.join(txt_dir, f"{model_type}_train_results_fold{i}.png")
+        save_path = os.path.join(save_dir, f"{model_type}_model_seed{i}.pth")
+        txt_dir = os.path.join(save_dir, f"{model_type}_train_results_seed{i}_results")
+        fig_path = os.path.join(txt_dir, f"{model_type}_train_results_seed{i}.png")
         os.makedirs(txt_dir, exist_ok=True)
 
         train_model(model, train_loader, valid_loader, criterion, optimizer, scheduler, save_path, fig_path)
@@ -209,7 +253,7 @@ if __name__ == "__main__":
             model, test_loader, criterion, txt_dir, save_path, title=class_names[GT_class]
         )
 
-        print(f"Fold {i} Test F1: {f1:.4f}")
+        print(f"Seed {i} Test F1: {f1:.4f}")
         all_f1_scores.append(f1)
         all_avg_times.append(avg_time_per_sample)
         all_acc.append(acc)
@@ -219,4 +263,5 @@ if __name__ == "__main__":
             best_seed = i
             best_model_path = save_path
 
-    write_results(model, input_dim, category_ratio, num_folds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
+    # write_results(model, input_dim, category_ratio, num_folds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)
+    write_results(model, input_dim, category_ratio, seeds, all_f1_scores, all_avg_times, all_acc, best_f1, best_seed, best_model_path, save_dir)

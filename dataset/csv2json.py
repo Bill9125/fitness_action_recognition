@@ -28,7 +28,7 @@ def reorganize(row, idx, del_col):
                 data.append(row.iloc[s])
     else:
         data = row.iloc[0:idx].values.astype(float).tolist()
-    label = row.iloc[idx_label['tilting_to_the_left']:idx_label['scapular_protraction']+1].astype(int).tolist()
+    label = row.iloc[idx_label['wrists_bending_backward']:idx_label['scapular_protraction']+1].astype(int).tolist()
     return data, label
 
 def label2str(ground_truth):
@@ -40,9 +40,7 @@ def label2str(ground_truth):
 
 def csv2json(dataset_root, split_index, del_col):
     df = pd.read_csv(dataset_root, skiprows=1)
-    i = 0
     counter = 0
-    old_number = -1
     tmp_data = []
     # 巢狀字典結構: subjects_data[number][ground_truth][i] = tensor
     subjects_data = defaultdict(lambda: defaultdict(dict))
@@ -51,28 +49,22 @@ def csv2json(dataset_root, split_index, del_col):
         # 拿掉壓手腕資料
         if row.iloc[split_index+1] == 1:
             continue
-        data, ground_truth = reorganize(row, split_index, del_col)
+        data, ground_truth = reorganize(row, split_index+1, del_col)
         tmp_data.append(data)
 
         counter += 1
         if counter == 100:
-            path = row.iloc[-1]
-            path_str = Path(path.replace("\\", "/")) # 先把反斜線統一成正斜線
-            number = path_str.parts[3]
-            if old_number != number: # 換下一組
-                i = 0
+            path = row.iloc[-2]
+            number = row.iloc[-1]
             gt_key = label2str(ground_truth)
-            subjects_data[number][gt_key][i] = tmp_data
-            i+=1
-            old_number = number
+            subjects_data[path][gt_key][number] = tmp_data
             tmp_data = []
             counter = 0
     return subjects_data
             
 def save_json(data, dir):
-    json.dump(data, open(os.path.join(dir, 'data.json'), 'w'), indent=4)
-
-csv_path = os.path.join(os.getcwd(), 'data', 'subject_test.csv')
+    json.dump(data, open(os.path.join(dir, 'data_wrist.json'), 'w'), indent=4)
+csv_path = os.path.join(os.getcwd(), 'data', 'BP_data_new_angle', 'step5_normalized.csv')
 save_dir = os.path.dirname(csv_path)
 subjects_data = csv2json(csv_path, split_index=52, del_col=False)
 save_json(subjects_data, save_dir)

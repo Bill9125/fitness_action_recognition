@@ -112,11 +112,11 @@ def write_results(model, input_dim, category_ratio, num_folds, all_f1_scores, al
     summary_lines = []
     summary_lines.append("\n✅ F1 scores from each fold:")
     
-    for fold, f1, st, ac in zip(list(range(num_folds)), all_f1_scores, all_sample_times, all_acc):
-        summary_lines.append(f"Fold {fold}: F1 = {f1:.4f}, Average Time per Sample = {st:.6f} seconds, Accuracy = {ac:.4f}")
+    for fold, f1, st, ac in zip(list(num_folds), all_f1_scores, all_sample_times, all_acc):
+        summary_lines.append(f"Seed {fold}: F1 = {f1:.4f}, Average Time per Sample = {st:.6f} seconds, Accuracy = {ac:.4f}")
 
     summary_lines.append(f"\n📊 Average F1 Score: {np.mean(all_f1_scores):.4f} ± {np.std(all_f1_scores):.4f}")
-    summary_lines.append(f"🏆 Best F1: {best_f1:.4f} from Fold {best_seed}")
+    summary_lines.append(f"🏆 Best F1: {best_f1:.4f} from Seed {best_seed}")
     summary_lines.append(f"📁 Best model saved at: {best_model_path}")
 
     # 印出結果到 terminal
