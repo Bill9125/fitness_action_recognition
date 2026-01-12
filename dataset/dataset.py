@@ -48,9 +48,15 @@ class ResnetSubset(Subset):
 
     def __getitem__(self, idx):
         x, y, true_idx = self.dataset[self.indices[idx]]
-        if self.transform:
-            x = self.time_stretch(x, random.uniform(0.8, 1.2))
-            x = self.add_gaussian_noise(x, std=0.01)
+        # 這邊去實作不同的 augumentation 帶來的效果
+        #############################################
+        
+        
+        
+        
+        
+        
+        #############################################
         return x, y, true_idx
 
     def time_stretch(self, x, stretch_factor):
