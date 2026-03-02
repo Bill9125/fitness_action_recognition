@@ -34,7 +34,7 @@ class Dataset_TST_Deadlift(Dataset):
                 continue
             recordings = glob.glob(os.path.join(path, '*'))
             class_recs[str(label)].extend(recordings)
-
+            
         # 類別 0 → 全為 0 的標籤
         for recording in class_recs['0']:
             self.data[os.path.basename(recording)] = [0, 0, 0, 0]
@@ -149,7 +149,7 @@ class Dataset_TST_Deadlift(Dataset):
                 self.dim = len(frame_data)
                 data_per_ind.append(frame_data)
                 
-                if len(data_per_ind) == 110:  # 达到110帧时返回
+                if len(data_per_ind) == 110:
                     yield data_per_ind
                     data_per_ind = []
                     
