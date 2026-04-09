@@ -34,6 +34,7 @@ def train_model(model, train_loader, valid_loader, criterion, optimizer, schedul
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             total_loss += loss.item()
 
@@ -106,10 +107,11 @@ def get_warmup_cosine_scheduler(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument('--sport', type=str)
     parser.add_argument('--split_training', type=bool)
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of subset workers for DataLoader')
     args = parser.parse_args()
     seeds = [42, 2023, 7, 88, 100, 999]
     
@@ -118,16 +120,16 @@ if __name__ == "__main__":
     if args.sport == 'deadlift':
         data_path = os.path.join(os.getcwd(), 'data', 'deadlift', '2D_traindata_Final')
         full_dataset = Dataset_TST_Deadlift(data_path)
-        save_dir = f'./models/deadlift/TST_Deadlift/13'
+        save_dir = f'./models/deadlift/TST_Deadlift/15'
         num_classes = 4
         input_len = 110
         
     elif args.sport == 'benchpress':
-        data_path = os.path.join(os.getcwd(), 'data', 'BP_data_new_angle', 'data_wrist.json')
+        data_path = os.path.join(os.getcwd(), 'data', args.sport, 'no_wrist', 'data.json')
         with open(data_path, 'r', encoding='utf-8') as f:
             all_data = json.load(f)
-        save_dir = './models/benchpress/TST_Benchpress/Exp3/random_seed_wrist_press'
-        num_classes = 5
+        save_dir = './models/benchpress/TST_Benchpress/system_use/random_seed_no_wrist'
+        num_classes = 4
         input_len = 100
         
         if args.split_training:
@@ -162,13 +164,14 @@ if __name__ == "__main__":
                 set_seed(se)
                 random.shuffle(all_keys)
                 
-                train_len = int(len(all_keys) * 0.9)
+                train_len = int(len(all_keys) * 0.95)
                 train_keys = all_keys[:train_len]
                 test_keys = all_keys[train_len:]
 
                 train_data = {str(k): all_data[str(k)] for k in train_keys}
                 test_data = {str(k): all_data[str(k)] for k in test_keys}
                 datasets.append((train_data, test_data))
+            num_folds = len(seeds)
             
     best_f1 = -1
     best_seed = None
@@ -178,45 +181,46 @@ if __name__ == "__main__":
     cost_times = []
     accuracies = []
 
-    for i, se in enumerate(seeds):
-    # for i, (train_data, test_data) in enumerate(datasets):
-        set_seed(se)
+    # for i, se in enumerate(seeds):
+    for i, (train_data, test_data) in enumerate(datasets):
+        # set_seed(se)
 
         # 分割資料
-        gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        train_size = int(0.9 * len(full_dataset))
-        valid_size = int(0.05 * len(full_dataset))
-        test_size = int(len(full_dataset)) - train_size - valid_size
-        train_indices, valid_indices, test_indices = random_split(
-            range(len(full_dataset)), [train_size, valid_size, test_size],
-            generator=gen
-        )
-        # train_valid_dataset = Dataset_Benchpress(train_data)
-        # test_dataset = Dataset_Benchpress(test_data)
-        # all_indices = list(range(len(train_valid_dataset)))
-        # random.shuffle(all_indices)
+        # gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
+        # train_size = int(0.9 * len(full_dataset))
+        # valid_size = int(0.05 * len(full_dataset))
+        # test_size = int(len(full_dataset)) - train_size - valid_size
+        # train_indices, valid_indices, test_indices = random_split(
+        #     range(len(full_dataset)), [train_size, valid_size, test_size],
+        #     generator=gen
+        # )
+        train_valid_dataset = Dataset_Benchpress(train_data)
+        test_dataset = Dataset_Benchpress(test_data)
+        all_indices = list(range(len(train_valid_dataset)))
+        random.shuffle(all_indices)
         
-        # input_dim = train_valid_dataset.dim
-        # print('Input dimention',input_dim)
+        input_dim = train_valid_dataset.dim
+        print('Input dimention',input_dim)
         
-        # train_size = int(0.9 * len(train_valid_dataset))
-        # valid_size = int(len(train_valid_dataset)) - train_size
-        # test_size = int(len(test_dataset))
-        # print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
-        # train_indices = all_indices[:train_size]
-        # valid_indices = all_indices[train_size:]
+        train_size = int(0.9 * len(train_valid_dataset))
+        valid_size = int(len(train_valid_dataset)) - train_size
+        test_size = int(len(test_dataset))
+        print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
+        train_indices = all_indices[:train_size]
+        valid_indices = all_indices[train_size:]
+        test_indices = list(range(len(test_dataset)))
         
-        train_dataset = Datasubset(full_dataset, train_indices, transform=True)
-        valid_dataset = Datasubset(full_dataset, valid_indices, transform=False)
-        test_dataset = Datasubset(full_dataset, test_indices, transform=False)
+        train_dataset = Datasubset(train_valid_dataset, train_indices, transform=True)
+        valid_dataset = Datasubset(train_valid_dataset, valid_indices, transform=False)
+        test_dataset = Datasubset(test_dataset, test_indices, transform=False)
 
-        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=args.num_workers, pin_memory=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
         # 訓練與測試
-        model = PatchTSTClassifier(40, num_classes, input_len).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=0.0001)
+        model = PatchTSTClassifier(input_dim, num_classes, input_len).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=0.0003)
         criterion = torch.nn.BCEWithLogitsLoss()
         scheduler = get_warmup_cosine_scheduler(optimizer, warmup_epochs=5, max_epochs=100, min_lr_ratio=0.0)
 

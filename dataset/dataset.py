@@ -15,6 +15,7 @@ class Dataset_Benchpress(Dataset):
         self.features = torch.stack(self.features)
         self.labels = torch.stack(self.labels)
         self.dim = self.features.shape[-1]
+        print(self.dim)
 
     def __len__(self):
         return len(self.features)

@@ -89,53 +89,65 @@ class ResNet32(nn.Module):
         return x
     
 class PatchEmbedding(nn.Module):
-    def __init__(self, input_len, patch_len, input_dim, embed_dim, stride=None):
+    def __init__(self, patch_len, embed_dim, stride):
         super().__init__()
+        # 在 Channel Independence 模式下，輸入維度永遠是 1
+        self.proj = nn.Linear(patch_len * 1, embed_dim)
+        self.stride = stride
         self.patch_len = patch_len
-        self.input_dim = input_dim
-        self.embed_dim = embed_dim
-        self.stride = stride if stride else patch_len
-        self.proj = nn.Linear(patch_len * input_dim, embed_dim)
 
     def forward(self, x):
-        B, T, F = x.shape
-        x = x.unfold(dimension=1, size=self.patch_len, step=self.stride)
-        x = x.contiguous().view(B, -1, self.patch_len * F)
-        x = self.proj(x)
+        # x shape: (B*C, T, 1)
+        B_C, T, _ = x.shape
+        x = x.unfold(dimension=1, size=self.patch_len, step=self.stride) 
+        # x shape: (B*C, num_patches, 1, patch_len)
+        x = x.reshape(B_C, -1, self.patch_len) # 展平 patch
+        x = self.proj(x) # (B*C, num_patches, embed_dim)
         return x
 
 class PatchTSTClassifier(nn.Module):
-    def __init__(self, input_dim, num_classes, input_len, patch_len=10,
-                    embed_dim=256, num_heads=4, num_layers=4, dropout=0.3, stride=1):
+    def __init__(self, input_dim, num_classes, input_len, patch_len=10, 
+                 embed_dim=256, num_heads=4, num_layers=4, dropout=0.3, stride=1):
         super().__init__()
-        self.patch_embed = PatchEmbedding(input_len, patch_len, input_dim, embed_dim, stride=stride)
-        self.embed_dim = embed_dim
-
-        num_patches = (input_len - patch_len) // (stride if stride else patch_len) + 1
+        
+        # 修正點：這裡傳入 1，因為每個通道獨立處理
+        self.patch_embed = PatchEmbedding(patch_len, embed_dim, stride)
+        
+        num_patches = (input_len - patch_len) // stride + 1
         self.pos_embed = nn.Parameter(torch.randn(1, num_patches, embed_dim))
-
+        
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim, nhead=num_heads, dropout=dropout, batch_first=True
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         self.classifier = nn.Sequential(
-            nn.LayerNorm(embed_dim),
-            nn.Linear(embed_dim, num_classes)
+            nn.LayerNorm(input_dim * num_patches * embed_dim), # 這裡要改成 51200
+            nn.Linear(input_dim * num_patches * embed_dim, num_classes)
         )
 
-
     def forward(self, x):
-        x = self.patch_embed(x)  # (B, num_patches, embed_dim)
+        # x: (B, T, C)
+        B, T, C = x.shape
         
-        # 動態調整位置嵌入的長度（安全做法）
-        pos_embed = self.pos_embed[:, :x.size(1), :]  # 可裁切
-        if pos_embed.size(1) < x.size(1):  # 若不足，補上隨機值（不常見）
-            extra = torch.randn(1, x.size(1) - pos_embed.size(1), self.embed_dim, device=x.device)
-            pos_embed = torch.cat([pos_embed, extra], dim=1)
-
-        x = x + pos_embed  # (B, tokens, embed_dim)
+        # --- 論文核心：Channel Independence ---
+        # 1. 重排維度: (B, T, C) -> (B, C, T) -> (B*C, T, 1)
+        x = x.permute(0, 2, 1).reshape(B * C, T, 1)
+        
+        # 2. Patching & Embedding
+        x = self.patch_embed(x)  # (B*C, num_patches, embed_dim)
+        
+        # 3. Transformer
+        x = x + self.pos_embed
         x = self.transformer(x)
-        x = x.mean(dim=1)
+        
+        # 4. 聚合資訊 (Readout)
+        # 先做時間維度平均 (Global Average Pooling over patches)
+        # x = x.mean(dim=1)  # (B*C, embed_dim)
+        
+        # 再做通道間的聚合: (B*C, embed_dim) -> (B, C, embed_dim) -> (B, embed_dim)
+        # x = x.view(B, C, -1).mean(dim=1) 
+        x = x.view(B, -1)
+        # 5. 分類層
         return self.classifier(x)
     
