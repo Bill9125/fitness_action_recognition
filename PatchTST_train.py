@@ -107,71 +107,67 @@ def get_warmup_cosine_scheduler(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     
 if __name__ == "__main__":
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument('--sport', type=str)
-    parser.add_argument('--split_training', type=bool)
+    parser.add_argument('--subject_split', type=bool, help='Whether to split the dataset by subject')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of subset workers for DataLoader')
+    parser.add_argument('--tag', type=str, help='Tag for save_dir, default is your data argumentation')
     args = parser.parse_args()
     seeds = [42, 2023, 7, 88, 100, 999]
     
     from dataset import *
     
     if args.sport == 'deadlift':
-        data_path = os.path.join(os.getcwd(), 'data', 'deadlift', '2D_traindata_Final')
-        full_dataset = Dataset_TST_Deadlift(data_path)
-        save_dir = f'./models/deadlift/TST_Deadlift/15'
+        data_path = os.path.join(os.getcwd(), 'data', 'deadlift_dataset.csv')
+        full_dataset = Dataset_Deadlift(data_path)
+        save_dir = f'./models/deadlift/TST_Deadlift/{args.tag}'
         num_classes = 4
         input_len = 110
         
     elif args.sport == 'benchpress':
-        data_path = os.path.join(os.getcwd(), 'data', args.sport, 'no_wrist', 'data.json')
-        with open(data_path, 'r', encoding='utf-8') as f:
-            all_data = json.load(f)
-        save_dir = './models/benchpress/TST_Benchpress/system_use/random_seed_no_wrist'
+        data_path = os.path.join(os.getcwd(), 'data', 'benchpress_dataset.csv')
+        full_dataset = Dataset_Benchpress(data_path)
+        save_dir = f'./models/benchpress/TST_Benchpress/{args.tag}'
         num_classes = 4
         input_len = 100
         
-        if args.split_training:
-            # 打亂所有 keys
-            all_keys = list(map(str, all_data.keys()))
-            random.shuffle(all_keys)
+    dataset_folds = []
+    if args.subject_split:
+        unique_subjects = sorted(list(set(full_dataset.subjects)))
+        random.shuffle(unique_subjects)
 
-            # 切成六份
-            num_folds = 6
-            fold_size = len(all_keys) // num_folds
-            folds = [all_keys[i*fold_size:(i+1)*fold_size] for i in range(num_folds)]
+        # 7:2:1 split for subjects
+        n_subs = len(unique_subjects)
+        tr_end = int(0.7 * n_subs)
+        vl_end = int(0.9 * n_subs)
+        
+        train_subs = set(unique_subjects[:tr_end])
+        val_subs = set(unique_subjects[tr_end:vl_end])
+        test_subs = set(unique_subjects[vl_end:])
+        
+        train_indices = [idx for idx, s in enumerate(full_dataset.subjects) if s in train_subs]
+        valid_indices = [idx for idx, s in enumerate(full_dataset.subjects) if s in val_subs]
+        test_indices = [idx for idx, s in enumerate(full_dataset.subjects) if s in test_subs]
+        
+        # We only need one "fold" for a fixed 7:2:1 split
+        dataset_folds = [(train_indices, valid_indices, test_indices)]
+        num_folds = 1
+    else:
+        num_folds = len(seeds)
+        for se in seeds:
+            random.seed(se)
+            all_indices = list(range(len(full_dataset)))
+            random.shuffle(all_indices)
             
-            # 如果不能整除，把剩下的分配到前幾份
-            remainder = len(all_keys) % num_folds
-            for i in range(remainder):
-                folds[i].append(all_keys[num_folds*fold_size + i])
-                
-            # 生成六組 train/test
-            datasets = []
-            for i in range(num_folds):
-                test_keys = folds[i]
-                train_keys = [k for j, f in enumerate(folds) if j != i for k in f]
-
-                test_data = {str(k): all_data[str(k)] for k in test_keys}
-                train_data = {str(k): all_data[str(k)] for k in train_keys}
-                datasets.append((train_data, test_data))
-        else:
-            # 打亂所有 keys
-            all_keys = list(map(str, all_data.keys()))
-            datasets = []
-            for se in seeds:
-                set_seed(se)
-                random.shuffle(all_keys)
-                
-                train_len = int(len(all_keys) * 0.95)
-                train_keys = all_keys[:train_len]
-                test_keys = all_keys[train_len:]
-
-                train_data = {str(k): all_data[str(k)] for k in train_keys}
-                test_data = {str(k): all_data[str(k)] for k in test_keys}
-                datasets.append((train_data, test_data))
-            num_folds = len(seeds)
+            n_total = len(all_indices)
+            tr_end = int(0.7 * n_total)
+            vl_end = int(0.9 * n_total)
+            
+            train_idx = all_indices[:tr_end]
+            val_idx = all_indices[tr_end:vl_end]
+            test_idx = all_indices[vl_end:]
+            dataset_folds.append((train_idx, val_idx, test_idx))
             
     best_f1 = -1
     best_seed = None
@@ -181,38 +177,13 @@ if __name__ == "__main__":
     cost_times = []
     accuracies = []
 
-    # for i, se in enumerate(seeds):
-    for i, (train_data, test_data) in enumerate(datasets):
-        # set_seed(se)
+    for i, (t_idx, v_idx, test_indices) in enumerate(dataset_folds):
+        train_dataset = Datasubset(full_dataset, t_idx, transform=True)
+        valid_dataset = Datasubset(full_dataset, v_idx, transform=False)
+        test_dataset = Datasubset(full_dataset, test_indices, transform=False)
 
-        # 分割資料
-        # gen = torch.Generator().manual_seed(se)  # 為每個seed創建獨立生成器
-        # train_size = int(0.9 * len(full_dataset))
-        # valid_size = int(0.05 * len(full_dataset))
-        # test_size = int(len(full_dataset)) - train_size - valid_size
-        # train_indices, valid_indices, test_indices = random_split(
-        #     range(len(full_dataset)), [train_size, valid_size, test_size],
-        #     generator=gen
-        # )
-        train_valid_dataset = Dataset_Benchpress(train_data)
-        test_dataset = Dataset_Benchpress(test_data)
-        all_indices = list(range(len(train_valid_dataset)))
-        random.shuffle(all_indices)
-        
-        input_dim = train_valid_dataset.dim
-        print('Input dimention',input_dim)
-        
-        train_size = int(0.9 * len(train_valid_dataset))
-        valid_size = int(len(train_valid_dataset)) - train_size
-        test_size = int(len(test_dataset))
-        print(f'train_size : {train_size}, valid_size : {valid_size}, test_size : {test_size}')
-        train_indices = all_indices[:train_size]
-        valid_indices = all_indices[train_size:]
-        test_indices = list(range(len(test_dataset)))
-        
-        train_dataset = Datasubset(train_valid_dataset, train_indices, transform=True)
-        valid_dataset = Datasubset(train_valid_dataset, valid_indices, transform=False)
-        test_dataset = Datasubset(test_dataset, test_indices, transform=False)
+        input_dim = full_dataset.dim
+        print(f'Fold {i} | Input Dim: {input_dim} | Train: {len(train_dataset)}, Val: {len(valid_dataset)}, Test: {len(test_dataset)}')
 
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=args.num_workers, pin_memory=True)
         valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False, num_workers=args.num_workers, pin_memory=True)
